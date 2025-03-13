@@ -8,8 +8,9 @@ be used as a starting point when wrapping your own code.
 
 .. note::
 
-   The best place to look for examples is the `NumPy issue tracker`_, or the test
-   cases for ``f2py``
+   The best place to look for examples is the `NumPy issue tracker`_, or the
+   test cases for ``f2py``. Some more use cases are in
+   :ref:`f2py-boilerplating`.
 
 F2PY walkthrough: a basic extension module
 ------------------------------------------
@@ -218,7 +219,7 @@ multi-step extension module generation. In this case, after running
 
 .. code-block:: python
 
-	python -m numpy.f2py myroutine.f90 -h myroutine.pyf
+	python -m numpy.f2py myroutine.f90 -m myroutine -h myroutine.pyf
 
 the following signature file is generated:
 
@@ -240,7 +241,6 @@ Read more
 
 * `Wrapping C codes using f2py <https://scipy.github.io/old-wiki/pages/Cookbook/f2py_and_NumPy.html>`_
 * `F2py section on the SciPy Cookbook <https://scipy-cookbook.readthedocs.io/items/F2Py.html>`_
-* `F2py example: Interactive System for Ice sheet Simulation <http://websrv.cs.umt.edu/isis/index.php/F2py_example>`_
 * `"Interfacing With Other Languages" section on the SciPy Cookbook.
   <https://scipy-cookbook.readthedocs.io/items/idx_interfacing_with_other_languages.html>`_
 

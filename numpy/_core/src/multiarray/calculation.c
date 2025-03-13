@@ -11,7 +11,7 @@
 
 #include "npy_config.h"
 
-#include "npy_pycompat.h"
+
 
 #include "common.h"
 #include "number.h"
@@ -124,18 +124,18 @@ _PyArray_ArgMinMaxCommon(PyArrayObject *op,
 
     if (is_argmax) {
         func_name = "argmax";
-        arg_func = PyArray_DESCR(ap)->f->argmax;
+        arg_func = PyDataType_GetArrFuncs(PyArray_DESCR(ap))->argmax;
     }
     else {
         func_name = "argmin";
-        arg_func = PyArray_DESCR(ap)->f->argmin;
+        arg_func = PyDataType_GetArrFuncs(PyArray_DESCR(ap))->argmin;
     }
     if (arg_func == NULL) {
         PyErr_SetString(PyExc_TypeError,
                 "data type not ordered");
         goto fail;
     }
-    elsize = PyArray_DESCR(ap)->elsize;
+    elsize = PyArray_ITEMSIZE(ap);
     m = PyArray_DIMS(ap)[PyArray_NDIM(ap)-1];
     if (m == 0) {
         PyErr_Format(PyExc_ValueError,
@@ -700,7 +700,7 @@ PyArray_Round(PyArrayObject *a, int decimals, PyArrayObject *out)
  finish:
     Py_DECREF(f);
     Py_DECREF(out);
-    if (ret_int) {
+    if (ret_int && ret != NULL) {
         Py_INCREF(PyArray_DESCR(a));
         tmp = PyArray_CastToType((PyArrayObject *)ret,
                                  PyArray_DESCR(a), PyArray_ISFORTRAN(a));
@@ -836,12 +836,9 @@ PyArray_Conjugate(PyArrayObject *self, PyArrayObject *out)
     else {
         PyArrayObject *ret;
         if (!PyArray_ISNUMBER(self)) {
-            /* 2017-05-04, 1.13 */
-            if (DEPRECATE("attempting to conjugate non-numeric dtype; this "
-                          "will error in the future to match the behavior of "
-                          "np.conjugate") < 0) {
-                return NULL;
-            }
+            PyErr_SetString(PyExc_TypeError,
+                "cannot conjugate non-numeric dtype");
+            return NULL;
         }
         if (out) {
             if (PyArray_AssignArray(out, self,

@@ -52,7 +52,7 @@ NPYV_IMPL_NEON_MEM(f64, double)
  ***************************/
 NPY_FINLINE npyv_s32 npyv_loadn_s32(const npy_int32 *ptr, npy_intp stride)
 {
-    int32x4_t a;
+    int32x4_t a = vdupq_n_s32(0);
     a = vld1q_lane_s32((const int32_t*)ptr,            a, 0);
     a = vld1q_lane_s32((const int32_t*)ptr + stride,   a, 1);
     a = vld1q_lane_s32((const int32_t*)ptr + stride*2, a, 2);
@@ -584,7 +584,7 @@ NPYV_IMPL_NEON_REST_PARTIAL_TYPES_PAIR(f64, s64)
 #endif
 
 /************************************************************
- *  de-interlave load / interleave contiguous store
+ *  de-interleave load / interleave contiguous store
  ************************************************************/
 // two channels
 #define NPYV_IMPL_NEON_MEM_INTERLEAVE(SFX, T_PTR)                        \

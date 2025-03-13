@@ -5,7 +5,7 @@ NEP 46 — NumPy sponsorship guidelines
 =====================================
 
 :Author: Ralf Gommers <ralf.gommers@gmail.com>
-:Status: Accepted
+:Status: Active
 :Type: Process
 :Created: 2020-12-27
 :Resolution: https://mail.python.org/pipermail/numpy-discussion/2021-January/081424.html
@@ -85,8 +85,7 @@ Sponsors will get acknowledged through:
 - a small logo displayed on the front page of the NumPy website
 - prominent logo placement on https://numpy.org/about/
 - logos displayed in talks about NumPy by maintainers
-- announcements of the sponsorship on the NumPy mailing list and the numpy-team
-  Twitter account
+- announcements of the sponsorship on the NumPy mailing list
 
 In addition to Sponsors, we already have the concept of Institutional Partner
 (defined in NumPy's

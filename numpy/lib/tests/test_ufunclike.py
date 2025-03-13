@@ -57,7 +57,7 @@ class TestUfunclike:
                 res.metadata = metadata
                 return res
 
-            def __array_wrap__(self, obj, context=None):
+            def __array_wrap__(self, obj, context=None, return_scalar=False):
                 if not isinstance(obj, MyArray):
                     obj = obj.view(MyArray)
                 if obj.metadata is None:
@@ -76,7 +76,7 @@ class TestUfunclike:
         assert_equal(f.metadata, 'foo')
 
         # check 0d arrays don't decay to scalars
-        m0d = m[0,...]
+        m0d = m[0, ...]
         m0d.metadata = 'bar'
         f0d = fix(m0d)
         assert_(isinstance(f0d, MyArray))

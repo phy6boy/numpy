@@ -17,50 +17,67 @@ jobs:
   python64bit_openblas:
     name: x86-64, LP64 OpenBLAS
     runs-on: windows-2019
-    if: "github.repository == 'numpy/numpy'"
+    # To enable this job on a fork, comment out:
+    if: github.repository == 'numpy/numpy'
     strategy:
+      fail-fast: false
       matrix:
-        compiler: ["MSVC", "Clang-cl"]
+        compiler-pyversion:
+          - ["MSVC", "3.11"]
+          - ["Clang-cl", "3.13t"]
+
     steps:
     - name: Checkout
-      uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+      uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: recursive
-        fetch-depth: 0
+        fetch-tags: true
+        persist-credentials: false
 
     - name: Setup Python
-      uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+      uses: astral-sh/setup-uv@f94ec6bedd8674c4426838e6b50417d36b6ab231
       with:
-        python-version: '3.11'
+        python-version: ${{ matrix.compiler-pyversion[1] }}
+        enable-cache: false
+
+    - run:
+        uv pip install --python=${{ matrix.version }} pip
+
+    # TODO: remove cython nightly install when cython does a release
+    - name: Install nightly Cython
+      if: matrix.compiler-pyversion[1] == '3.13t'
+      run: |
+        pip install -i https://pypi.anaconda.org/scientific-python-nightly-wheels/simple cython
 
     - name: Install build dependencies from PyPI
       run: |
-        python -m pip install spin Cython
+        pip install -r requirements/build_requirements.txt
 
     - name: Install pkg-config
       run: |
-        choco install -y --checksum 6004DF17818F5A6DBF19CB335CC92702 pkgconfiglite
+        choco install -y --stoponfirstfailure --checksum 6004DF17818F5A6DBF19CB335CC92702 pkgconfiglite
+        echo "PKG_CONFIG_PATH=${{ github.workspace }}/.openblas" >> $env:GITHUB_ENV
+
 
     - name: Install Clang-cl
-      if: matrix.compiler == 'Clang-cl'
+      if: matrix.compiler-pyversion[0] == 'Clang-cl'
       run: |
-        choco install llvm -y --version=16.0.6
+        # llvm is preinstalled, but leave
+        # this here in case we need to pin the
+        # version at some point.
+        #choco install llvm -y
 
     - name: Install NumPy (MSVC)
-      if: matrix.compiler == 'MSVC'
-      env:
-        PKG_CONFIG_PATH: ${{ github.workspace }}/.openblas
+      if: matrix.compiler-pyversion[0] == 'MSVC'
       run: |
-        python -m pip install scipy-openblas32
+        pip install -r requirements/ci_requirements.txt
         spin build --with-scipy-openblas=32 -j2 -- --vsenv
 
     - name: Install NumPy (Clang-cl)
-      if: matrix.compiler == 'Clang-cl'
-      env:
-        PKG_CONFIG_PATH: ${{ github.workspace }}/.openblas
+      if: matrix.compiler-pyversion[0] == 'Clang-cl'
       run: |
         "[binaries]","c = 'clang-cl'","cpp = 'clang-cl'","ar = 'llvm-lib'","c_ld = 'lld-link'","cpp_ld = 'lld-link'" | Out-File $PWD/clang-cl-build.ini -Encoding ascii
-        python -m pip install scipy-openblas32
+        pip install -r requirements/ci_requirements.txt
         spin build --with-scipy-openblas=32 -j2 -- --vsenv --native-file=$PWD/clang-cl-build.ini
 
     - name: Meson Log
@@ -71,28 +88,30 @@ jobs:
 
     - name: Install test dependencies
       run: |
-        python -m pip install -r test_requirements.txt
+        python -m pip install -r requirements/test_requirements.txt
         python -m pip install threadpoolctl
 
     - name: Run test suite
       run: |
-        spin test
+        spin test -- --timeout=600 --durations=10
 
   msvc_32bit_python_no_openblas:
     name: MSVC, 32-bit Python, no BLAS
     runs-on: windows-2019
-    if: "github.repository == 'numpy/numpy'"
+    # To enable this job on a fork, comment out:
+    if: github.repository == 'numpy/numpy'
     steps:
       - name: Checkout
-        uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           submodules: recursive
-          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
 
       - name: Setup Python (32-bit)
-        uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
         with:
-          python-version: '3.10'
+          python-version: '3.11'
           architecture: 'x86'
 
       - name: Setup MSVC (32-bit)
@@ -106,9 +125,9 @@ jobs:
 
       - name: Install test dependencies
         run: |
-          python -m pip install -r test_requirements.txt
+          python -m pip install -r requirements/test_requirements.txt
 
       - name: Run test suite (fast)
         run: |
           cd tools
-          python -m pytest --pyargs numpy -m "not slow" -n2
+          python -m pytest --pyargs numpy -m "not slow" -n2 --timeout=600 --durations=10

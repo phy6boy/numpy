@@ -1,16 +1,14 @@
 __all__ = ['atleast_1d', 'atleast_2d', 'atleast_3d', 'block', 'hstack',
-           'stack', 'vstack']
+           'stack', 'unstack', 'vstack']
 
 import functools
 import itertools
 import operator
-import warnings
 
 from . import numeric as _nx
 from . import overrides
 from .multiarray import array, asanyarray, normalize_axis_index
 from . import fromnumeric as _from_nx
-
 
 array_function_dispatch = functools.partial(
     overrides.array_function_dispatch, module='numpy')
@@ -36,7 +34,7 @@ def atleast_1d(*arys):
     Returns
     -------
     ret : ndarray
-        An array, or list of arrays, each with ``a.ndim >= 1``.
+        An array, or tuple of arrays, each with ``a.ndim >= 1``.
         Copies are made only if necessary.
 
     See Also
@@ -45,6 +43,7 @@ def atleast_1d(*arys):
 
     Examples
     --------
+    >>> import numpy as np
     >>> np.atleast_1d(1.0)
     array([1.])
 
@@ -57,21 +56,21 @@ def atleast_1d(*arys):
     True
 
     >>> np.atleast_1d(1, [3, 4])
-    [array([1]), array([3, 4])]
+    (array([1]), array([3, 4]))
 
     """
+    if len(arys) == 1:
+        result = asanyarray(arys[0])
+        if result.ndim == 0:
+            result = result.reshape(1)
+        return result
     res = []
     for ary in arys:
-        ary = asanyarray(ary)
-        if ary.ndim == 0:
-            result = ary.reshape(1)
-        else:
-            result = ary
+        result = asanyarray(ary)
+        if result.ndim == 0:
+            result = result.reshape(1)
         res.append(result)
-    if len(res) == 1:
-        return res[0]
-    else:
-        return res
+    return tuple(res)
 
 
 def _atleast_2d_dispatcher(*arys):
@@ -93,7 +92,7 @@ def atleast_2d(*arys):
     Returns
     -------
     res, res2, ... : ndarray
-        An array, or list of arrays, each with ``a.ndim >= 2``.
+        An array, or tuple of arrays, each with ``a.ndim >= 2``.
         Copies are avoided where possible, and views with two or more
         dimensions are returned.
 
@@ -103,6 +102,7 @@ def atleast_2d(*arys):
 
     Examples
     --------
+    >>> import numpy as np
     >>> np.atleast_2d(3.0)
     array([[3.]])
 
@@ -113,7 +113,7 @@ def atleast_2d(*arys):
     True
 
     >>> np.atleast_2d(1, [1, 2], [[1, 2]])
-    [array([[1]]), array([[1, 2]]), array([[1, 2]])]
+    (array([[1]]), array([[1, 2]]), array([[1, 2]]))
 
     """
     res = []
@@ -129,7 +129,7 @@ def atleast_2d(*arys):
     if len(res) == 1:
         return res[0]
     else:
-        return res
+        return tuple(res)
 
 
 def _atleast_3d_dispatcher(*arys):
@@ -151,7 +151,7 @@ def atleast_3d(*arys):
     Returns
     -------
     res1, res2, ... : ndarray
-        An array, or list of arrays, each with ``a.ndim >= 3``.  Copies are
+        An array, or tuple of arrays, each with ``a.ndim >= 3``.  Copies are
         avoided where possible, and views with three or more dimensions are
         returned.  For example, a 1-D array of shape ``(N,)`` becomes a view
         of shape ``(1, N, 1)``, and a 2-D array of shape ``(M, N)`` becomes a
@@ -163,6 +163,7 @@ def atleast_3d(*arys):
 
     Examples
     --------
+    >>> import numpy as np
     >>> np.atleast_3d(3.0)
     array([[[3.]]])
 
@@ -201,7 +202,7 @@ def atleast_3d(*arys):
     if len(res) == 1:
         return res[0]
     else:
-        return res
+        return tuple(res)
 
 
 def _arrays_for_stack_dispatcher(arrays):
@@ -234,7 +235,9 @@ def vstack(tup, *, dtype=None, casting="same_kind"):
     ----------
     tup : sequence of ndarrays
         The arrays must have the same shape along all but the first axis.
-        1-D arrays must have the same length.
+        1-D arrays must have the same length. In the case of a single
+        array_like input, it will be treated as a sequence of arrays; i.e.,
+        each element along the zeroth axis is treated as a separate array.
 
     dtype : str or dtype
         If provided, the destination array will have this dtype. Cannot be
@@ -261,9 +264,11 @@ def vstack(tup, *, dtype=None, casting="same_kind"):
     dstack : Stack arrays in sequence depth wise (along third axis).
     column_stack : Stack 1-D arrays as columns into a 2-D array.
     vsplit : Split an array into multiple sub-arrays vertically (row-wise).
+    unstack : Split an array into a tuple of sub-arrays along an axis.
 
     Examples
     --------
+    >>> import numpy as np
     >>> a = np.array([1, 2, 3])
     >>> b = np.array([4, 5, 6])
     >>> np.vstack((a,b))
@@ -282,8 +287,8 @@ def vstack(tup, *, dtype=None, casting="same_kind"):
 
     """
     arrs = atleast_2d(*tup)
-    if not isinstance(arrs, list):
-        arrs = [arrs]
+    if not isinstance(arrs, tuple):
+        arrs = (arrs,)
     return _nx.concatenate(arrs, 0, dtype=dtype, casting=casting)
 
 
@@ -305,7 +310,9 @@ def hstack(tup, *, dtype=None, casting="same_kind"):
     ----------
     tup : sequence of ndarrays
         The arrays must have the same shape along all but the second axis,
-        except 1-D arrays which can be any length.
+        except 1-D arrays which can be any length. In the case of a single
+        array_like input, it will be treated as a sequence of arrays; i.e.,
+        each element along the zeroth axis is treated as a separate array.
 
     dtype : str or dtype
         If provided, the destination array will have this dtype. Cannot be
@@ -331,11 +338,13 @@ def hstack(tup, *, dtype=None, casting="same_kind"):
     vstack : Stack arrays in sequence vertically (row wise).
     dstack : Stack arrays in sequence depth wise (along third axis).
     column_stack : Stack 1-D arrays as columns into a 2-D array.
-    hsplit : Split an array into multiple sub-arrays 
+    hsplit : Split an array into multiple sub-arrays
              horizontally (column-wise).
+    unstack : Split an array into a tuple of sub-arrays along an axis.
 
     Examples
     --------
+    >>> import numpy as np
     >>> a = np.array((1,2,3))
     >>> b = np.array((4,5,6))
     >>> np.hstack((a,b))
@@ -349,8 +358,8 @@ def hstack(tup, *, dtype=None, casting="same_kind"):
 
     """
     arrs = atleast_1d(*tup)
-    if not isinstance(arrs, list):
-        arrs = [arrs]
+    if not isinstance(arrs, tuple):
+        arrs = (arrs,)
     # As a special case, dimension 0 of 1-dimensional arrays is "horizontal"
     if arrs and arrs[0].ndim == 1:
         return _nx.concatenate(arrs, 0, dtype=dtype, casting=casting)
@@ -377,12 +386,12 @@ def stack(arrays, axis=0, out=None, *, dtype=None, casting="same_kind"):
     dimensions of the result. For example, if ``axis=0`` it will be the first
     dimension and if ``axis=-1`` it will be the last dimension.
 
-    .. versionadded:: 1.10.0
-
     Parameters
     ----------
-    arrays : sequence of array_like
-        Each array must have the same shape.
+    arrays : sequence of ndarrays
+        Each array must have the same shape. In the case of a single ndarray
+        array_like input, it will be treated as a sequence of arrays; i.e.,
+        each element along the zeroth axis is treated as a separate array.
 
     axis : int, optional
         The axis in the result array along which the input arrays are stacked.
@@ -414,10 +423,13 @@ def stack(arrays, axis=0, out=None, *, dtype=None, casting="same_kind"):
     concatenate : Join a sequence of arrays along an existing axis.
     block : Assemble an nd-array from nested lists of blocks.
     split : Split array into a list of multiple sub-arrays of equal size.
+    unstack : Split an array into a tuple of sub-arrays along an axis.
 
     Examples
     --------
-    >>> arrays = [np.random.randn(3, 4) for _ in range(10)]
+    >>> import numpy as np
+    >>> rng = np.random.default_rng()
+    >>> arrays = [rng.normal(size=(3,4)) for _ in range(10)]
     >>> np.stack(arrays, axis=0).shape
     (10, 3, 4)
 
@@ -454,6 +466,77 @@ def stack(arrays, axis=0, out=None, *, dtype=None, casting="same_kind"):
     expanded_arrays = [arr[sl] for arr in arrays]
     return _nx.concatenate(expanded_arrays, axis=axis, out=out,
                            dtype=dtype, casting=casting)
+
+def _unstack_dispatcher(x, /, *, axis=None):
+    return (x,)
+
+@array_function_dispatch(_unstack_dispatcher)
+def unstack(x, /, *, axis=0):
+    """
+    Split an array into a sequence of arrays along the given axis.
+
+    The ``axis`` parameter specifies the dimension along which the array will
+    be split. For example, if ``axis=0`` (the default) it will be the first
+    dimension and if ``axis=-1`` it will be the last dimension.
+
+    The result is a tuple of arrays split along ``axis``.
+
+    .. versionadded:: 2.1.0
+
+    Parameters
+    ----------
+    x : ndarray
+        The array to be unstacked.
+    axis : int, optional
+        Axis along which the array will be split. Default: ``0``.
+
+    Returns
+    -------
+    unstacked : tuple of ndarrays
+        The unstacked arrays.
+
+    See Also
+    --------
+    stack : Join a sequence of arrays along a new axis.
+    concatenate : Join a sequence of arrays along an existing axis.
+    block : Assemble an nd-array from nested lists of blocks.
+    split : Split array into a list of multiple sub-arrays of equal size.
+
+    Notes
+    -----
+    ``unstack`` serves as the reverse operation of :py:func:`stack`, i.e.,
+    ``stack(unstack(x, axis=axis), axis=axis) == x``.
+
+    This function is equivalent to ``tuple(np.moveaxis(x, axis, 0))``, since
+    iterating on an array iterates along the first axis.
+
+    Examples
+    --------
+    >>> arr = np.arange(24).reshape((2, 3, 4))
+    >>> np.unstack(arr)
+    (array([[ 0,  1,  2,  3],
+            [ 4,  5,  6,  7],
+            [ 8,  9, 10, 11]]),
+     array([[12, 13, 14, 15],
+            [16, 17, 18, 19],
+            [20, 21, 22, 23]]))
+    >>> np.unstack(arr, axis=1)
+    (array([[ 0,  1,  2,  3],
+            [12, 13, 14, 15]]),
+     array([[ 4,  5,  6,  7],
+            [16, 17, 18, 19]]),
+     array([[ 8,  9, 10, 11],
+            [20, 21, 22, 23]]))
+    >>> arr2 = np.stack(np.unstack(arr, axis=1), axis=1)
+    >>> arr2.shape
+    (2, 3, 4)
+    >>> np.all(arr == arr2)
+    np.True_
+
+    """
+    if x.ndim == 0:
+        raise ValueError("Input array must be at least 1-d.")
+    return tuple(_nx.moveaxis(x, axis, 0))
 
 
 # Internal functions to eliminate the overhead of repeated dispatch in one of
@@ -552,7 +635,7 @@ def _block_check_depths_match(arrays, parent_index=[]):
 def _atleast_nd(a, ndim):
     # Ensures `a` has at least `ndim` dimensions by prepending
     # ones to `a.shape` as necessary
-    return array(a, ndmin=ndim, copy=False, subok=True)
+    return array(a, ndmin=ndim, copy=None, subok=True)
 
 
 def _accumulate(values):
@@ -600,14 +683,14 @@ def _concatenate_shapes(shapes, axis):
     # Take a shape, any shape
     first_shape = shapes[0]
     first_shape_pre = first_shape[:axis]
-    first_shape_post = first_shape[axis+1:]
+    first_shape_post = first_shape[axis + 1:]
 
     if any(shape[:axis] != first_shape_pre or
-           shape[axis+1:] != first_shape_post for shape in shapes):
+           shape[axis + 1:] != first_shape_post for shape in shapes):
         raise ValueError(
             'Mismatched array shapes in block along axis {}.'.format(axis))
 
-    shape = (first_shape_pre + (sum(shape_at_axis),) + first_shape[axis+1:])
+    shape = (first_shape_pre + (sum(shape_at_axis),) + first_shape[axis + 1:])
 
     offsets_at_axis = _accumulate(shape_at_axis)
     slice_prefixes = [(slice(start, end),)
@@ -645,7 +728,7 @@ def _block_info_recursion(arrays, max_depth, result_ndim, depth=0):
     """
     if depth < max_depth:
         shapes, slices, arrays = zip(
-            *[_block_info_recursion(arr, max_depth, result_ndim, depth+1)
+            *[_block_info_recursion(arr, max_depth, result_ndim, depth + 1)
               for arr in arrays])
 
         axis = result_ndim - max_depth + depth
@@ -679,9 +762,9 @@ def _block(arrays, max_depth, result_ndim, depth=0):
     for details).
     """
     if depth < max_depth:
-        arrs = [_block(arr, max_depth, result_ndim, depth+1)
+        arrs = [_block(arr, max_depth, result_ndim, depth + 1)
                 for arr in arrays]
-        return _concatenate(arrs, axis=-(max_depth-depth))
+        return _concatenate(arrs, axis=-(max_depth - depth))
     else:
         # We've 'bottomed out' - arrays is either a scalar or an array
         # type(arrays) is not list
@@ -709,15 +792,13 @@ def block(arrays):
     second-last dimension (-2), and so on until the outermost list is reached.
 
     Blocks can be of any dimension, but will not be broadcasted using
-    the normal rules. Instead, leading axes of size 1 are inserted, 
+    the normal rules. Instead, leading axes of size 1 are inserted,
     to make ``block.ndim`` the same for all blocks. This is primarily useful
     for working with scalars, and means that code like ``np.block([v, 1])``
     is valid, where ``v.ndim == 1``.
 
     When the nested list is two levels deep, this allows block matrices to be
     constructed from their components.
-
-    .. versionadded:: 1.13.0
 
     Parameters
     ----------
@@ -755,10 +836,10 @@ def block(arrays):
     dstack : Stack arrays in sequence depth wise (along third axis).
     column_stack : Stack 1-D arrays as columns into a 2-D array.
     vsplit : Split an array into multiple sub-arrays vertically (row-wise).
+    unstack : Split an array into a tuple of sub-arrays along an axis.
 
     Notes
     -----
-
     When called with only scalars, ``np.block`` is equivalent to an ndarray
     call. So ``np.block([[1, 2], [3, 4]])`` is equivalent to
     ``np.array([[1, 2], [3, 4]])``.
@@ -788,8 +869,9 @@ def block(arrays):
 
     Examples
     --------
-    The most common use of this function is to build a block matrix
+    The most common use of this function is to build a block matrix:
 
+    >>> import numpy as np
     >>> A = np.eye(2) * 2
     >>> B = np.eye(3) * 3
     >>> np.block([
@@ -802,7 +884,7 @@ def block(arrays):
            [1., 1., 0., 3., 0.],
            [1., 1., 0., 0., 3.]])
 
-    With a list of depth 1, `block` can be used as `hstack`
+    With a list of depth 1, `block` can be used as `hstack`:
 
     >>> np.block([1, 2, 3])              # hstack([1, 2, 3])
     array([1, 2, 3])
@@ -834,7 +916,7 @@ def block(arrays):
            [2, 2],
            [2, 2]])
 
-    It can also be used in places of `atleast_1d` and `atleast_2d`
+    It can also be used in place of `atleast_1d` and `atleast_2d`:
 
     >>> a = np.array(0)
     >>> b = np.array([1])

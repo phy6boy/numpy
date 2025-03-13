@@ -5,6 +5,11 @@
 
 /******************** Private Definitions *********************/
 
+// This is initialized during module initialization and thereafter immutable.
+// We don't include it in the global data struct because the definitions in
+// this file are shared by the _simd, _umath_tests, and
+// _multiarray_umath modules
+
 // Hold all CPU features boolean values
 static unsigned char npy__cpu_have[NPY_CPU_FEATURE_MAX];
 
@@ -119,7 +124,9 @@ static struct {
                 {NPY_CPU_FEATURE_ASIMDHP, "ASIMDHP"},
                 {NPY_CPU_FEATURE_ASIMDDP, "ASIMDDP"},
                 {NPY_CPU_FEATURE_ASIMDFHM, "ASIMDFHM"},
-                {NPY_CPU_FEATURE_SVE, "SVE"}};
+                {NPY_CPU_FEATURE_SVE, "SVE"},
+                {NPY_CPU_FEATURE_RVV, "RVV"},
+                {NPY_CPU_FEATURE_LSX, "LSX"}};
 
 
 NPY_VISIBILITY_HIDDEN PyObject *
@@ -325,7 +332,6 @@ npy__cpu_check_env(int disable, const char *env) {
         ) < 0) {
             return -1;
         }
-        return 0;
     }
 
     #define NOTSUPP_BODY \
@@ -469,6 +475,8 @@ npy__cpu_init_features(void)
     // third call to the cpuid to get extended AVX2 & AVX512 feature bits
     npy__cpu_cpuid(reg, 7);
     npy__cpu_have[NPY_CPU_FEATURE_AVX2]   = (reg[1] & (1 << 5))  != 0;
+    npy__cpu_have[NPY_CPU_FEATURE_AVX2]   = npy__cpu_have[NPY_CPU_FEATURE_AVX2] &&
+                                            npy__cpu_have[NPY_CPU_FEATURE_FMA3];
     if (!npy__cpu_have[NPY_CPU_FEATURE_AVX2])
         return;
     // detect AVX2 & FMA3
@@ -624,10 +632,14 @@ npy__cpu_init_features(void)
 #elif defined(__s390x__)
 
 #include <sys/auxv.h>
-#ifndef HWCAP_S390_VXE
-    #define HWCAP_S390_VXE 8192
-#endif
 
+/* kernel HWCAP names, available in musl, not available in glibc<2.33: https://sourceware.org/bugzilla/show_bug.cgi?id=25971 */
+#ifndef HWCAP_S390_VXRS
+    #define HWCAP_S390_VXRS 2048
+#endif
+#ifndef HWCAP_S390_VXRS_EXT
+    #define HWCAP_S390_VXRS_EXT 8192
+#endif
 #ifndef HWCAP_S390_VXRS_EXT2
     #define HWCAP_S390_VXRS_EXT2 32768
 #endif
@@ -636,9 +648,9 @@ static void
 npy__cpu_init_features(void)
 {
     memset(npy__cpu_have, 0, sizeof(npy__cpu_have[0]) * NPY_CPU_FEATURE_MAX);
-    
+
     unsigned int hwcap = getauxval(AT_HWCAP);
-    if ((hwcap & HWCAP_S390_VX) == 0) {
+    if ((hwcap & HWCAP_S390_VXRS) == 0) {
         return;
     }
 
@@ -648,16 +660,34 @@ npy__cpu_init_features(void)
        npy__cpu_have[NPY_CPU_FEATURE_VXE2] = 1;
        return;
     }
-    
-    npy__cpu_have[NPY_CPU_FEATURE_VXE] = (hwcap & HWCAP_S390_VXE) != 0;
+
+    npy__cpu_have[NPY_CPU_FEATURE_VXE] = (hwcap & HWCAP_S390_VXRS_EXT) != 0;
 
     npy__cpu_have[NPY_CPU_FEATURE_VX]  = 1;
 }
 
+/***************** LoongArch ******************/
+
+#elif defined(__loongarch_lp64)
+
+#include <sys/auxv.h>
+#include <asm/hwcap.h>
+
+static void
+npy__cpu_init_features(void)
+{
+   memset(npy__cpu_have, 0, sizeof(npy__cpu_have[0]) * NPY_CPU_FEATURE_MAX);
+   unsigned int hwcap = getauxval(AT_HWCAP);
+
+   if ((hwcap & HWCAP_LOONGARCH_LSX)) {
+      npy__cpu_have[NPY_CPU_FEATURE_LSX]  = 1;
+      return;
+   }
+}
 
 /***************** ARM ******************/
 
-#elif defined(__arm__) || defined(__aarch64__)
+#elif defined(__arm__) || defined(__aarch64__) || defined(_M_ARM64)
 
 static inline void
 npy__cpu_init_features_arm8(void)
@@ -783,7 +813,7 @@ npy__cpu_init_features(void)
         return;
 #endif
     // We have nothing else todo
-#if defined(NPY_HAVE_ASIMD) || defined(__aarch64__) || (defined(__ARM_ARCH) && __ARM_ARCH >= 8)
+#if defined(NPY_HAVE_ASIMD) || defined(__aarch64__) || (defined(__ARM_ARCH) && __ARM_ARCH >= 8) || defined(_M_ARM64)
     #if defined(NPY_HAVE_FPHP) || defined(__ARM_FEATURE_FP16_VECTOR_ARITHMETIC)
     npy__cpu_have[NPY_CPU_FEATURE_FPHP] = 1;
     #endif
@@ -813,6 +843,28 @@ npy__cpu_init_features(void)
 #endif
 }
 
+/************** RISC-V 64 ***************/
+
+#elif defined(__riscv) && __riscv_xlen == 64
+
+#include <sys/auxv.h>
+
+#ifndef HWCAP_RVV
+    // https://github.com/torvalds/linux/blob/v6.8/arch/riscv/include/uapi/asm/hwcap.h#L24
+    #define COMPAT_HWCAP_ISA_V	(1 << ('V' - 'A'))
+#endif
+
+static void
+npy__cpu_init_features(void)
+{
+    memset(npy__cpu_have, 0, sizeof(npy__cpu_have[0]) * NPY_CPU_FEATURE_MAX);
+
+    unsigned int hwcap = getauxval(AT_HWCAP);
+    if (hwcap & COMPAT_HWCAP_ISA_V) {
+        npy__cpu_have[NPY_CPU_FEATURE_RVV]  = 1;
+    }
+}
+
 /*********** Unsupported ARCH ***********/
 #else
 static void
@@ -820,7 +872,7 @@ npy__cpu_init_features(void)
 {
     /*
      * just in case if the compiler doesn't respect ANSI
-     * but for knowing platforms it still nessecery, because @npy__cpu_init_features
+     * but for knowing platforms it still necessary, because @npy__cpu_init_features
      * may called multiple of times and we need to clear the disabled features by
      * ENV Var or maybe in the future we can support other methods like
      * global variables, go back to @npy__cpu_try_disable_env for more understanding

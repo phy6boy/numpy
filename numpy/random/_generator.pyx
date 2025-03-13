@@ -22,6 +22,7 @@ from ._bounded_integers cimport (_rand_bool, _rand_int32, _rand_int64,
          _rand_int16, _rand_int8, _rand_uint64, _rand_uint32, _rand_uint16,
          _rand_uint8, _gen_mask)
 from ._pcg64 import PCG64
+from ._mt19937 import MT19937
 from numpy.random cimport bitgen_t
 from ._common cimport (POISSON_LAM_MAX, CONS_POSITIVE, CONS_NONE,
             CONS_NON_NEGATIVE, CONS_BOUNDED_0_1, CONS_BOUNDED_GT_0_1,
@@ -146,7 +147,7 @@ cdef class Generator:
 
     Container for the BitGenerators.
 
-    ``Generator`` exposes a number of methods for generating random
+    `Generator` exposes a number of methods for generating random
     numbers drawn from a variety of probability distributions. In addition to
     the distribution-specific arguments, each method takes a keyword argument
     `size` that defaults to ``None``. If `size` is ``None``, then a single
@@ -159,7 +160,7 @@ cdef class Generator:
 
     **No Compatibility Guarantee**
 
-    ``Generator`` does not provide a version compatibility guarantee. In
+    `Generator` does not provide a version compatibility guarantee. In
     particular, as better algorithms evolve the bit stream may change.
 
     Parameters
@@ -169,10 +170,11 @@ cdef class Generator:
 
     Notes
     -----
-    The Python stdlib module `random` contains pseudo-random number generator
-    with a number of methods that are similar to the ones available in
-    ``Generator``. It uses Mersenne Twister, and this bit generator can
-    be accessed using ``MT19937``. ``Generator``, besides being
+    The Python stdlib module :external+python:mod:`random` contains
+    pseudo-random number generator with a number of methods that are similar
+    to the ones available in `Generator`.
+    It uses Mersenne Twister, and this bit generator can
+    be accessed using `MT19937`. `Generator`, besides being
     NumPy-aware, has the advantage that it provides a much larger number
     of probability distributions to choose from.
 
@@ -214,17 +216,19 @@ cdef class Generator:
 
     # Pickling support:
     def __getstate__(self):
-        return self.bit_generator.state
+        return None
 
-    def __setstate__(self, state):
-        self.bit_generator.state = state
+    def __setstate__(self, bit_gen):
+        if isinstance(bit_gen, dict):
+            # Legacy path
+            # Prior to 2.0.x only the state of the underlying bit generator
+            # was preserved and any seed sequence information was lost
+            self.bit_generator.state = bit_gen
 
     def __reduce__(self):
-        ctor, name_tpl, state = self._bit_generator.__reduce__()
-
         from ._pickle import __generator_ctor
-        # Requirements of __generator_ctor are (name, ctor)
-        return __generator_ctor, (name_tpl[0], ctor), state
+        # Requirements of __generator_ctor are (bit_generator, )
+        return __generator_ctor, (self._bit_generator, ), None
 
     @property
     def bit_generator(self):
@@ -366,7 +370,7 @@ cdef class Generator:
         Draw samples from a Beta distribution.
 
         The Beta distribution is a special case of the Dirichlet distribution,
-        and is related to the Gamma distribution.  It has the probability
+        and is related to the Gamma distribution. It has the probability
         distribution function
 
         .. math:: f(x; a,b) = \\frac{1}{B(\\alpha, \\beta)} x^{\\alpha - 1}
@@ -395,6 +399,44 @@ cdef class Generator:
         -------
         out : ndarray or scalar
             Drawn samples from the parameterized beta distribution.
+
+        Examples
+        -------- 
+        The beta distribution has mean a/(a+b). If ``a == b`` and both 
+        are > 1, the distribution is symmetric with mean 0.5.
+
+        >>> rng = np.random.default_rng()
+        >>> a, b, size = 2.0, 2.0, 10000
+        >>> sample = rng.beta(a=a, b=b, size=size)
+        >>> np.mean(sample)
+        0.5047328775385895  # may vary
+        
+        Otherwise the distribution is skewed left or right according to
+        whether ``a`` or ``b`` is greater. The distribution is mirror
+        symmetric. See for example:
+        
+        >>> a, b, size = 2, 7, 10000
+        >>> sample_left = rng.beta(a=a, b=b, size=size)
+        >>> sample_right = rng.beta(a=b, b=a, size=size)
+        >>> m_left, m_right = np.mean(sample_left), np.mean(sample_right)
+        >>> print(m_left, m_right)
+        0.2238596793678923 0.7774613834041182  # may vary
+        >>> print(m_left - a/(a+b))
+        0.001637457145670096  # may vary
+        >>> print(m_right - b/(a+b))
+        -0.0003163943736596009  # may vary
+
+        Display the histogram of the two samples:
+        
+        >>> import matplotlib.pyplot as plt
+        >>> plt.hist([sample_left, sample_right], 
+        ...          50, density=True, histtype='bar')
+        >>> plt.show()
+        
+        References
+        ----------
+        .. [1] Wikipedia, "Beta distribution",
+               https://en.wikipedia.org/wiki/Beta_distribution
 
         """
         return cont(&random_beta, &self._bitgen, size, self.lock, 2,
@@ -440,20 +482,31 @@ cdef class Generator:
 
         Examples
         --------
-        A real world example: Assume a company has 10000 customer support 
-        agents and the average time between customer calls is 4 minutes.
+        Assume a company has 10000 customer support agents and the time 
+        between customer calls is exponentially distributed and that the 
+        average time between customer calls is 4 minutes.
 
-        >>> n = 10000
+        >>> scale, size = 4, 10000
         >>> rng = np.random.default_rng()
-        >>> time_between_calls = rng.exponential(scale=4, size=n)
+        >>> time_between_calls = rng.exponential(scale=scale, size=size)
 
         What is the probability that a customer will call in the next 
         4 to 5 minutes? 
         
-        >>> x = ((time_between_calls < 5).sum())/n 
-        >>> y = ((time_between_calls < 4).sum())/n
-        >>> x-y
-        0.08 # may vary
+        >>> x = ((time_between_calls < 5).sum())/size
+        >>> y = ((time_between_calls < 4).sum())/size
+        >>> x - y
+        0.08  # may vary
+
+        The corresponding distribution can be visualized as follows:
+
+        >>> import matplotlib.pyplot as plt
+        >>> scale, size = 4, 10000
+        >>> rng = np.random.default_rng()
+        >>> sample = rng.exponential(scale=scale, size=size)
+        >>> count, bins, _ = plt.hist(sample, 30, density=True)
+        >>> plt.plot(bins, scale**(-1)*np.exp(-scale**-1*bins), linewidth=2, color='r')
+        >>> plt.show()
 
         References
         ----------
@@ -668,6 +721,12 @@ cdef class Generator:
         out : bytes
             String of length `length`.
 
+        Notes
+        -----
+        This function generates random bytes from a discrete uniform 
+        distribution. The generated bytes are independent from the CPU's 
+        native endianness.
+        
         Examples
         --------
         >>> rng = np.random.default_rng()
@@ -738,6 +797,12 @@ cdef class Generator:
         efficient sampler than the default. The general sampler produces a different sample
         than the optimized sampler even if each element of ``p`` is 1 / len(a).
 
+        ``p`` must sum to 1 when cast to ``float64``. To ensure this, you may wish
+        to normalize using ``p = p / np.sum(p, dtype=float)``.
+
+        When passing ``a`` as an integer type and ``size`` is not specified, the return
+        type is a native Python ``int``.
+
         Examples
         --------
         Generate a uniform random sample from np.arange(5) of size 3:
@@ -789,7 +854,7 @@ cdef class Generator:
         cdef uint64_t[::1] hash_set
         # Format and Verify input
         a_original = a
-        a = np.array(a, copy=False)
+        a = np.asarray(a)
         if a.ndim == 0:
             try:
                 # __index__ must return an integer by python rules.
@@ -815,7 +880,7 @@ cdef class Generator:
                     atol = max(atol, np.sqrt(np.finfo(p.dtype).eps))
 
             p = <np.ndarray>np.PyArray_FROM_OTF(
-                p, np.NPY_DOUBLE, np.NPY_ALIGNED | np.NPY_ARRAY_C_CONTIGUOUS)
+                p, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED | np.NPY_ARRAY_C_CONTIGUOUS)
             pix = <double*>np.PyArray_DATA(p)
 
             if p.ndim != 1:
@@ -824,11 +889,12 @@ cdef class Generator:
                 raise ValueError("a and p must have same size")
             p_sum = kahan_sum(pix, d)
             if np.isnan(p_sum):
-                raise ValueError("probabilities contain NaN")
+                raise ValueError("Probabilities contain NaN")
             if np.logical_or.reduce(p < 0):
-                raise ValueError("probabilities are not non-negative")
+                raise ValueError("Probabilities are not non-negative")
             if abs(p_sum - 1.) > atol:
-                raise ValueError("probabilities do not sum to 1")
+                raise ValueError("Probabilities do not sum to 1. See Notes "
+                                 "section of docstring for more information.")
 
         # `shape == None` means `shape == ()`, but with scalar unpacking at the
         # end
@@ -848,7 +914,7 @@ cdef class Generator:
                 uniform_samples = self.random(shape)
                 idx = cdf.searchsorted(uniform_samples, side='right')
                 # searchsorted returns a scalar
-                idx = np.array(idx, copy=False, dtype=np.int64)
+                idx = np.asarray(idx, dtype=np.int64)
             else:
                 idx = self.integers(0, pop_size, size=shape, dtype=np.int64)
         else:
@@ -931,7 +997,7 @@ cdef class Generator:
         if a.ndim == 0:
             return idx
 
-        if not is_scalar and idx.ndim == 0:
+        if not is_scalar and idx.ndim == 0 and a.ndim == 1:
             # If size == () then the user requested a 0-d array as opposed to
             # a scalar object when size is None. However a[idx] is always a
             # scalar and not an array. So this makes sure the result is an
@@ -1021,8 +1087,8 @@ cdef class Generator:
         cdef double _low, _high, rng
         cdef object temp
 
-        alow = <np.ndarray>np.PyArray_FROM_OTF(low, np.NPY_DOUBLE, np.NPY_ALIGNED)
-        ahigh = <np.ndarray>np.PyArray_FROM_OTF(high, np.NPY_DOUBLE, np.NPY_ALIGNED)
+        alow = <np.ndarray>np.PyArray_FROM_OTF(low, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
+        ahigh = <np.ndarray>np.PyArray_FROM_OTF(high, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
 
         if np.PyArray_NDIM(alow) == np.PyArray_NDIM(ahigh) == 0:
             _low = PyFloat_AsDouble(low)
@@ -1196,7 +1262,7 @@ cdef class Generator:
         >>> rng = np.random.default_rng()
         >>> s = rng.normal(mu, sigma, 1000)
 
-        Verify the mean and the variance:
+        Verify the mean and the standard deviation:
 
         >>> abs(mu - np.mean(s))
         0.0  # may vary
@@ -1482,7 +1548,20 @@ cdef class Generator:
         So there is about a 1% chance that the F statistic will exceed 7.62,
         the measured value is 36, so the null hypothesis is rejected at the 1%
         level.
-
+        
+        The corresponding probability density function for ``n = 20`` 
+        and ``m = 20`` is:
+        
+        >>> import matplotlib.pyplot as plt
+        >>> from scipy import stats
+        >>> dfnum, dfden, size = 20, 20, 10000
+        >>> s = rng.f(dfnum=dfnum, dfden=dfden, size=size)
+        >>> bins, density, _ = plt.hist(s, 30, density=True)
+        >>> x = np.linspace(0, 5, 1000)
+        >>> plt.plot(x, stats.f.pdf(x, dfnum, dfden))
+        >>> plt.xlim([0, 5])
+        >>> plt.show()
+        
         """
         return cont(&random_f, &self._bitgen, size, self.lock, 2,
                     dfnum, 'dfnum', CONS_POSITIVE,
@@ -1504,9 +1583,6 @@ cdef class Generator:
         ----------
         dfnum : float or array_like of floats
             Numerator degrees of freedom, must be > 0.
-
-            .. versionchanged:: 1.14.0
-               Earlier NumPy versions required dfnum > 1.
         dfden : float or array_like of floats
             Denominator degrees of freedom, must be > 0.
         nonc : float or array_like of floats
@@ -1604,7 +1680,7 @@ cdef class Generator:
         The variable obtained by summing the squares of `df` independent,
         standard normally distributed random variables:
 
-        .. math:: Q = \\sum_{i=0}^{\\mathtt{df}} X^2_i
+        .. math:: Q = \\sum_{i=1}^{\\mathtt{df}} X^2_i
 
         is chi-square distributed, denoted
 
@@ -1630,6 +1706,18 @@ cdef class Generator:
         >>> rng.chisquare(2,4)
         array([ 1.89920014,  9.00867716,  3.13710533,  5.62318272]) # random
 
+        The distribution of a chi-square random variable
+        with 20 degrees of freedom looks as follows:
+        
+        >>> import matplotlib.pyplot as plt
+        >>> import scipy.stats as stats
+        >>> s = rng.chisquare(20, 10000)
+        >>> count, bins, _ = plt.hist(s, 30, density=True)
+        >>> x = np.linspace(0, 60, 1000)
+        >>> plt.plot(x, stats.chi2.pdf(x, df=20))
+        >>> plt.xlim([0, 60])
+        >>> plt.show()
+
         """
         return cont(&random_chisquare, &self._bitgen, size, self.lock, 1,
                     df, 'df', CONS_POSITIVE,
@@ -1649,9 +1737,6 @@ cdef class Generator:
         ----------
         df : float or array_like of floats
             Degrees of freedom, must be > 0.
-
-            .. versionchanged:: 1.10.0
-               Earlier NumPy versions required dfnum > 1.
         nonc : float or array_like of floats
             Non-centrality, must be non-negative.
         size : int or tuple of ints, optional
@@ -1896,7 +1981,7 @@ cdef class Generator:
         Draw samples from a von Mises distribution.
 
         Samples are drawn from a von Mises distribution with specified mode
-        (mu) and dispersion (kappa), on the interval [-pi, pi].
+        (mu) and concentration (kappa), on the interval [-pi, pi].
 
         The von Mises distribution (also known as the circular normal
         distribution) is a continuous probability distribution on the unit
@@ -1908,7 +1993,7 @@ cdef class Generator:
         mu : float or array_like of floats
             Mode ("center") of the distribution.
         kappa : float or array_like of floats
-            Dispersion of the distribution, has to be >=0.
+            Concentration of the distribution, has to be >=0.
         size : int or tuple of ints, optional
             Output shape.  If the given shape is, e.g., ``(m, n, k)``, then
             ``m * n * k`` samples are drawn.  If size is ``None`` (default),
@@ -1931,7 +2016,7 @@ cdef class Generator:
 
         .. math:: p(x) = \\frac{e^{\\kappa cos(x-\\mu)}}{2\\pi I_0(\\kappa)},
 
-        where :math:`\\mu` is the mode and :math:`\\kappa` the dispersion,
+        where :math:`\\mu` is the mode and :math:`\\kappa` the concentration,
         and :math:`I_0(\\kappa)` is the modified Bessel function of order 0.
 
         The von Mises is named for Richard Edler von Mises, who was born in
@@ -1952,7 +2037,7 @@ cdef class Generator:
         --------
         Draw samples from the distribution:
 
-        >>> mu, kappa = 0.0, 4.0 # mean and dispersion
+        >>> mu, kappa = 0.0, 4.0 # mean and concentration
         >>> rng = np.random.default_rng()
         >>> s = rng.vonmises(mu, kappa, 1000)
 
@@ -1977,25 +2062,8 @@ cdef class Generator:
         """
         pareto(a, size=None)
 
-        Draw samples from a Pareto II or Lomax distribution with
+        Draw samples from a Pareto II (AKA Lomax) distribution with
         specified shape.
-
-        The Lomax or Pareto II distribution is a shifted Pareto
-        distribution. The classical Pareto distribution can be
-        obtained from the Lomax distribution by adding 1 and
-        multiplying by the scale parameter ``m`` (see Notes).  The
-        smallest value of the Lomax distribution is zero while for the
-        classical Pareto distribution it is ``mu``, where the standard
-        Pareto distribution has location ``mu = 1``.  Lomax can also
-        be considered as a simplified version of the Generalized
-        Pareto distribution (available in SciPy), with the scale set
-        to one and the location set to zero.
-
-        The Pareto distribution must be greater than zero, and is
-        unbounded above.  It is also known as the "80-20 rule".  In
-        this distribution, 80 percent of the weights are in the lowest
-        20 percent of the range, while the other 20 percent fill the
-        remaining 80 percent of the range.
 
         Parameters
         ----------
@@ -2010,34 +2078,24 @@ cdef class Generator:
         Returns
         -------
         out : ndarray or scalar
-            Drawn samples from the parameterized Pareto distribution.
+            Drawn samples from the Pareto II distribution.
 
         See Also
         --------
-        scipy.stats.lomax : probability density function, distribution or
-            cumulative density function, etc.
-        scipy.stats.genpareto : probability density function, distribution or
-            cumulative density function, etc.
+        scipy.stats.pareto : Pareto I distribution
+        scipy.stats.lomax : Lomax (Pareto II) distribution
+        scipy.stats.genpareto : Generalized Pareto distribution
 
         Notes
         -----
-        The probability density for the Pareto distribution is
+        The probability density for the Pareto II distribution is
 
-        .. math:: p(x) = \\frac{am^a}{x^{a+1}}
+        .. math:: p(x) = \\frac{a}{{x+1}^{a+1}} , x \ge 0
 
-        where :math:`a` is the shape and :math:`m` the scale.
+        where :math:`a > 0` is the shape.
 
-        The Pareto distribution, named after the Italian economist
-        Vilfredo Pareto, is a power law probability distribution
-        useful in many real world problems.  Outside the field of
-        economics it is generally referred to as the Bradford
-        distribution. Pareto developed the distribution to describe
-        the distribution of wealth in an economy.  It has also found
-        use in insurance, web page access statistics, oil field sizes,
-        and many other problems, including the download frequency for
-        projects in Sourceforge [1]_.  It is one of the so-called
-        "fat-tailed" distributions.
-
+        The Pareto II distribution is a shifted and scaled version of the
+        Pareto I distribution, which can be found in `scipy.stats.pareto`.
 
         References
         ----------
@@ -2053,17 +2111,20 @@ cdef class Generator:
         --------
         Draw samples from the distribution:
 
-        >>> a, m = 3., 2.  # shape and mode
+        >>> a = 3.
         >>> rng = np.random.default_rng()
-        >>> s = (rng.pareto(a, 1000) + 1) * m
+        >>> s = rng.pareto(a, 10000)
 
         Display the histogram of the samples, along with the probability
         density function:
 
         >>> import matplotlib.pyplot as plt
-        >>> count, bins, _ = plt.hist(s, 100, density=True)
-        >>> fit = a*m**a / bins**(a+1)
-        >>> plt.plot(bins, max(count)*fit/max(fit), linewidth=2, color='r')
+        >>> x = np.linspace(0, 3, 50)
+        >>> pdf = a / (x+1)**(a+1)
+        >>> plt.hist(s, bins=x, density=True, label='histogram')
+        >>> plt.plot(x, pdf, linewidth=2, color='r', label='pdf')
+        >>> plt.xlim(x.min(), x.max())
+        >>> plt.legend()
         >>> plt.show()
 
         """
@@ -2877,9 +2938,9 @@ cdef class Generator:
         cdef double fleft, fmode, fright
         cdef np.ndarray oleft, omode, oright
 
-        oleft = <np.ndarray>np.PyArray_FROM_OTF(left, np.NPY_DOUBLE, np.NPY_ALIGNED)
-        omode = <np.ndarray>np.PyArray_FROM_OTF(mode, np.NPY_DOUBLE, np.NPY_ALIGNED)
-        oright = <np.ndarray>np.PyArray_FROM_OTF(right, np.NPY_DOUBLE, np.NPY_ALIGNED)
+        oleft = <np.ndarray>np.PyArray_FROM_OTF(left, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
+        omode = <np.ndarray>np.PyArray_FROM_OTF(mode, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
+        oright = <np.ndarray>np.PyArray_FROM_OTF(right, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
 
         if np.PyArray_NDIM(oleft) == np.PyArray_NDIM(omode) == np.PyArray_NDIM(oright) == 0:
             fleft = PyFloat_AsDouble(left)
@@ -2947,7 +3008,7 @@ cdef class Generator:
 
         Notes
         -----
-        The probability density for the binomial distribution is
+        The probability mass function (PMF) for the binomial distribution is
 
         .. math:: P(N) = \\binom{n}{N}p^N(1-p)^{n-N},
 
@@ -2981,19 +3042,31 @@ cdef class Generator:
         Draw samples from the distribution:
 
         >>> rng = np.random.default_rng()
-        >>> n, p = 10, .5  # number of trials, probability of each trial
-        >>> s = rng.binomial(n, p, 1000)
-        # result of flipping a coin 10 times, tested 1000 times.
+        >>> n, p, size = 10, .5, 10000  
+        >>> s = rng.binomial(n, p, 10000)
 
-        A real world example. A company drills 9 wild-cat oil exploration
-        wells, each with an estimated probability of success of 0.1. All nine
-        wells fail. What is the probability of that happening?
+        Assume a company drills 9 wild-cat oil exploration wells, each with
+        an estimated probability of success of ``p=0.1``. All nine wells fail. 
+        What is the probability of that happening?
 
-        Let's do 20,000 trials of the model, and count the number that
-        generate zero positive results.
+        Over ``size = 20,000`` trials the probability of this happening 
+        is on average:
 
-        >>> sum(rng.binomial(9, 0.1, 20000) == 0)/20000.
-        # answer = 0.38885, or 39%.
+        >>> n, p, size = 9, 0.1, 20000
+        >>> np.sum(rng.binomial(n=n, p=p, size=size) == 0)/size
+        0.39015  # may vary
+
+        The following can be used to visualize a sample with ``n=100``, 
+        ``p=0.4`` and the corresponding probability density function:
+
+        >>> import matplotlib.pyplot as plt
+        >>> from scipy.stats import binom
+        >>> n, p, size = 100, 0.4, 10000
+        >>> sample = rng.binomial(n, p, size=size)
+        >>> count, bins, _ = plt.hist(sample, 30, density=True)
+        >>> x = np.arange(n)
+        >>> y = binom.pmf(x, n, p)
+        >>> plt.plot(x, y, linewidth=2, color='r')
 
         """
 
@@ -3006,9 +3079,9 @@ cdef class Generator:
         cdef np.int64_t *randoms_data
         cdef np.broadcast it
 
-        p_arr = <np.ndarray>np.PyArray_FROM_OTF(p, np.NPY_DOUBLE, np.NPY_ALIGNED)
+        p_arr = <np.ndarray>np.PyArray_FROM_OTF(p, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
         is_scalar = is_scalar and np.PyArray_NDIM(p_arr) == 0
-        n_arr = <np.ndarray>np.PyArray_FROM_OTF(n, np.NPY_INT64, np.NPY_ALIGNED)
+        n_arr = <np.ndarray>np.PyArray_FROM_OTF(n, np.NPY_INT64, np.NPY_ARRAY_ALIGNED)
         is_scalar = is_scalar and np.PyArray_NDIM(n_arr) == 0
 
         if not is_scalar:
@@ -3148,9 +3221,9 @@ cdef class Generator:
         cdef double *_dp
         cdef double _dmax_lam
 
-        p_arr = <np.ndarray>np.PyArray_FROM_OTF(p, np.NPY_DOUBLE, np.NPY_ALIGNED)
+        p_arr = <np.ndarray>np.PyArray_FROM_OTF(p, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
         is_scalar = is_scalar and np.PyArray_NDIM(p_arr) == 0
-        n_arr = <np.ndarray>np.PyArray_FROM_OTF(n, np.NPY_DOUBLE, np.NPY_ALIGNED)
+        n_arr = <np.ndarray>np.PyArray_FROM_OTF(n, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
         is_scalar = is_scalar and np.PyArray_NDIM(n_arr) == 0
 
         if not is_scalar:
@@ -3207,7 +3280,7 @@ cdef class Generator:
 
         Notes
         -----
-        The Poisson distribution
+        The probability mass function (PMF) of Poisson distribution is
 
         .. math:: f(k; \\lambda)=\\frac{\\lambda^k e^{-\\lambda}}{k!}
 
@@ -3232,14 +3305,23 @@ cdef class Generator:
         --------
         Draw samples from the distribution:
 
-        >>> import numpy as np
         >>> rng = np.random.default_rng()
-        >>> s = rng.poisson(5, 10000)
+        >>> lam, size = 5, 10000
+        >>> s = rng.poisson(lam=lam, size=size)
 
-        Display histogram of the sample:
+        Verify the mean and variance, which should be approximately ``lam``:
+        
+        >>> s.mean(), s.var()
+        (4.9917 5.1088311)  # may vary
+
+        Display the histogram and probability mass function:
 
         >>> import matplotlib.pyplot as plt
-        >>> count, bins, _ = plt.hist(s, 14, density=True)
+        >>> from scipy import stats
+        >>> x = np.arange(0, 21)
+        >>> pmf = stats.poisson.pmf(x, mu=lam)
+        >>> plt.hist(s, bins=x, density=True, width=0.5)
+        >>> plt.stem(x, pmf, 'C1-')
         >>> plt.show()
 
         Draw each 100 values for lambda 100 and 500:
@@ -3288,7 +3370,7 @@ cdef class Generator:
 
         Notes
         -----
-        The probability density for the Zipf distribution is
+        The probability mass function (PMF) for the Zipf distribution is
 
         .. math:: p(k) = \\frac{k^{-a}}{\\zeta(a)},
 
@@ -3374,19 +3456,34 @@ cdef class Generator:
         out : ndarray or scalar
             Drawn samples from the parameterized geometric distribution.
 
+        References
+        ----------
+
+        .. [1] Wikipedia, "Geometric distribution",
+               https://en.wikipedia.org/wiki/Geometric_distribution
+
         Examples
         --------
-        Draw ten thousand values from the geometric distribution,
-        with the probability of an individual success equal to 0.35:
+        Draw 10,000 values from the geometric distribution, with the 
+        probability of an individual success equal to ``p = 0.35``:
 
+        >>> p, size = 0.35, 10000
         >>> rng = np.random.default_rng()
-        >>> z = rng.geometric(p=0.35, size=10000)
+        >>> sample = rng.geometric(p=p, size=size)
 
-        How many trials succeeded after a single run?
+        What proportion of trials succeeded after a single run?
 
-        >>> (z == 1).sum() / 10000.
-        0.34889999999999999  # random
+        >>> (sample == 1).sum()/size
+        0.34889999999999999  # may vary
 
+        The geometric distribution with ``p=0.35`` looks as follows:
+
+        >>> import matplotlib.pyplot as plt
+        >>> count, bins, _ = plt.hist(sample, bins=30, density=True)
+        >>> plt.plot(bins, (1-p)**(bins-1)*p)
+        >>> plt.xlim([0, 25])
+        >>> plt.show()
+        
         """
         return disc(&random_geometric, &self._bitgen, size, self.lock, 1, 0,
                     p, 'p', CONS_BOUNDED_GT_0_1,
@@ -3438,7 +3535,7 @@ cdef class Generator:
 
         Notes
         -----
-        The probability density for the Hypergeometric distribution is
+        The probability mass function (PMF) for the Hypergeometric distribution is
 
         .. math:: P(x) = \\frac{\\binom{g}{x}\\binom{b}{n-x}}{\\binom{g+b}{n}},
 
@@ -3504,9 +3601,9 @@ cdef class Generator:
         cdef np.ndarray ongood, onbad, onsample
         cdef int64_t lngood, lnbad, lnsample
 
-        ongood = <np.ndarray>np.PyArray_FROM_OTF(ngood, np.NPY_INT64, np.NPY_ALIGNED)
-        onbad = <np.ndarray>np.PyArray_FROM_OTF(nbad, np.NPY_INT64, np.NPY_ALIGNED)
-        onsample = <np.ndarray>np.PyArray_FROM_OTF(nsample, np.NPY_INT64, np.NPY_ALIGNED)
+        ongood = <np.ndarray>np.PyArray_FROM_OTF(ngood, np.NPY_INT64, np.NPY_ARRAY_ALIGNED)
+        onbad = <np.ndarray>np.PyArray_FROM_OTF(nbad, np.NPY_INT64, np.NPY_ARRAY_ALIGNED)
+        onsample = <np.ndarray>np.PyArray_FROM_OTF(nsample, np.NPY_INT64, np.NPY_ARRAY_ALIGNED)
 
         if np.PyArray_NDIM(ongood) == np.PyArray_NDIM(onbad) == np.PyArray_NDIM(onsample) == 0:
 
@@ -3659,8 +3756,6 @@ cdef class Generator:
             the slowest, while 'cholesky' is the fastest but less robust than
             the slowest method. The method `eigh` uses eigen decomposition to
             compute A and is faster than svd but slower than cholesky.
-
-            .. versionadded:: 1.18.0
 
         Returns
         -------
@@ -3909,9 +4004,6 @@ cdef class Generator:
 
             Each entry ``out[i,j,...,:]`` is a ``p``-dimensional value drawn
             from the distribution.
-
-            .. versionchanged:: 1.22.0
-                Added support for broadcasting `pvals` against `n`
 
         Examples
         --------
@@ -4205,8 +4297,6 @@ cdef class Generator:
         can be significantly faster than the "marginals" method.  If
         performance of the algorithm is important, test the two methods
         with typical inputs to decide which works best.
-
-        .. versionadded:: 1.18.0
 
         Examples
         --------
@@ -4904,7 +4994,7 @@ def default_rng(seed=None):
 
     Parameters
     ----------
-    seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator}, optional
+    seed : {None, int, array_like[ints], SeedSequence, BitGenerator, Generator, RandomState}, optional
         A seed to initialize the `BitGenerator`. If None, then fresh,
         unpredictable entropy will be pulled from the OS. If an ``int`` or
         ``array_like[ints]`` is passed, then all values must be non-negative and will be
@@ -4912,6 +5002,7 @@ def default_rng(seed=None):
         pass in a `SeedSequence` instance.
         Additionally, when passed a `BitGenerator`, it will be wrapped by
         `Generator`. If passed a `Generator`, it will be returned unaltered.
+        When passed a legacy `RandomState` instance it will be coerced to a `Generator`.
 
     Returns
     -------
@@ -4924,14 +5015,14 @@ def default_rng(seed=None):
     is instantiated. This function does not manage a default global instance.
 
     See :ref:`seeding_and_entropy` for more information about seeding.
-    
+
     Examples
     --------
-    ``default_rng`` is the recommended constructor for the random number class
-    ``Generator``. Here are several ways we can construct a random 
-    number generator using ``default_rng`` and the ``Generator`` class. 
-    
-    Here we use ``default_rng`` to generate a random float:
+    `default_rng` is the recommended constructor for the random number class
+    `Generator`. Here are several ways we can construct a random 
+    number generator using `default_rng` and the `Generator` class. 
+
+    Here we use `default_rng` to generate a random float:
  
     >>> import numpy as np
     >>> rng = np.random.default_rng(12345)
@@ -4943,7 +5034,7 @@ def default_rng(seed=None):
     >>> type(rfloat)
     <class 'float'>
      
-    Here we use ``default_rng`` to generate 3 random integers between 0 
+    Here we use `default_rng` to generate 3 random integers between 0 
     (inclusive) and 10 (exclusive):
         
     >>> import numpy as np
@@ -4984,6 +5075,13 @@ def default_rng(seed=None):
     elif isinstance(seed, Generator):
         # Pass through a Generator.
         return seed
+    elif isinstance(seed, np.random.RandomState):
+        gen = np.random.Generator(seed._bit_generator)
+        return gen
+
     # Otherwise we need to instantiate a new BitGenerator and Generator as
     # normal.
     return Generator(PCG64(seed))
+
+
+default_rng.__module__ = "numpy.random"

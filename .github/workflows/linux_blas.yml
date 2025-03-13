@@ -54,35 +54,40 @@ permissions:
 
 jobs:
   openblas32_stable_nightly:
-    if: "github.repository == 'numpy/numpy'"
+    # To enable this workflow on a fork, comment out:
+    if: github.repository == 'numpy/numpy'
     runs-on: ubuntu-latest
     strategy:
+      fail-fast: false
       matrix:
         USE_NIGHTLY_OPENBLAS: [false, true]
     env:
       USE_NIGHTLY_OPENBLAS: ${{ matrix.USE_NIGHTLY_OPENBLAS }}
     name: "Test Linux (${{ matrix.USE_NIGHTLY_OPENBLAS && 'nightly' || 'stable' }} OpenBLAS)"
     steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: recursive
-        fetch-depth: 0
-    - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        fetch-tags: true
+        persist-credentials: false
+    - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
       with:
         python-version: '3.11'
 
     - name: Install dependencies
       run: |
-        pip install -r build_requirements.txt
+        pip install -r requirements/build_requirements.txt
         # Install OpenBLAS
-        set -xe
         if [[ $USE_NIGHTLY_OPENBLAS == "true" ]]; then
-          target=$(python tools/openblas_support.py --nightly)
+            python -m pip install -i https://pypi.anaconda.org/scientific-python-nightly-wheels/simple scipy-openblas32
         else
-          target=$(python tools/openblas_support.py)
+            python -m pip install -r requirements/ci32_requirements.txt
         fi
-        sudo cp -r $target/lib/* /usr/lib
-        sudo cp $target/include/* /usr/include
+        mkdir -p ./.openblas
+        python -c"import scipy_openblas32 as ob32; print(ob32.get_pkg_config())" > ./.openblas/scipy-openblas.pc
+        echo "PKG_CONFIG_PATH=${{ github.workspace }}/.openblas" >> $GITHUB_ENV
+        ld_library_path=$(python -c"import scipy_openblas32 as ob32; print(ob32.get_lib_dir())")
+        echo "LD_LIBRARY_PATH=$ld_library_path" >> $GITHUB_ENV
 
     - name: Build
       shell: 'script -q -e -c "bash --noprofile --norc -eo pipefail {0}"'
@@ -98,20 +103,22 @@ jobs:
     - name: Check installed test and stub files
       run:
         python tools/check_installed_files.py $(find ./build-install -path '*/site-packages/numpy')
+    - name: Ensure scipy-openblas
+      run: |
+        set -ex
+        spin python tools/check_openblas_version.py 0.3.26
 
     - name: Test
       shell: 'script -q -e -c "bash --noprofile --norc -eo pipefail {0}"'
       env:
         TERM: xterm-256color
-        LD_LIBRARY_PATH: "/usr/local/lib/"  # to find libopenblas.so.0
-
       run: |
-        pip install pytest pytest-xdist hypothesis typing_extensions
-        spin test -j auto
+        pip install pytest pytest-xdist hypothesis typing_extensions pytest-timeout
+        spin test -j auto -- --timeout=600 --durations=10
 
 
   openblas_no_pkgconfig_fedora:
-    if: "github.repository == 'numpy/numpy'"
+    if: github.repository == 'numpy/numpy'
     runs-on: ubuntu-latest
     container: fedora:39
     name: "OpenBLAS (Fedora, no pkg-config, LP64/ILP64)"
@@ -120,21 +127,22 @@ jobs:
       run: |
         dnf install git gcc-gfortran g++ python3-devel openblas-devel -y
 
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: recursive
-        fetch-depth: 0
+        fetch-tags: true
+        persist-credentials: false
 
     - name: Install dependencies
       run: |
-        pip install -r build_requirements.txt
-        pip install pytest hypothesis typing_extensions
+        pip install -r requirements/build_requirements.txt
+        pip install pytest hypothesis typing_extensions pytest-timeout
 
     - name: Build (LP64)
       run: spin build -- -Dblas=openblas -Dlapack=openblas -Ddisable-optimization=true -Dallow-noblas=false
 
     - name: Test
-      run: spin test -- numpy/linalg
+      run: spin test -- numpy/linalg --timeout=600 --durations=10
 
     - name: Build (ILP64)
       run: |
@@ -142,11 +150,11 @@ jobs:
         spin build -- -Duse-ilp64=true -Ddisable-optimization=true -Dallow-noblas=false
 
     - name: Test
-      run: spin test -- numpy/linalg
+      run: spin test -- numpy/linalg --timeout=600 --durations=10
 
 
   flexiblas_fedora:
-    if: "github.repository == 'numpy/numpy'"
+    if: github.repository == 'numpy/numpy'
     runs-on: ubuntu-latest
     container: fedora:39
     name: "FlexiBLAS (LP64, ILP64 on Fedora)"
@@ -155,21 +163,22 @@ jobs:
       run: |
         dnf install git gcc-gfortran g++ python3-devel flexiblas-devel -y
 
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: recursive
-        fetch-depth: 0
+        fetch-tags: true
+        persist-credentials: false
 
     - name: Install dependencies
       run: |
-        pip install -r build_requirements.txt
-        pip install pytest hypothesis typing_extensions
+        pip install -r requirements/build_requirements.txt
+        pip install pytest hypothesis typing_extensions pytest-timeout
 
     - name: Build
       run: spin build -- -Ddisable-optimization=true -Dallow-noblas=false
 
     - name: Test
-      run: spin test -- numpy/linalg
+      run: spin test -- numpy/linalg --timeout=600 --durations=10
 
     - name: Build (ILP64)
       run: |
@@ -177,26 +186,28 @@ jobs:
         spin build -- -Ddisable-optimization=true -Duse-ilp64=true -Dallow-noblas=false
 
     - name: Test (ILP64)
-      run: spin test -- numpy/linalg
+      run: spin test -- numpy/linalg --timeout=600 --durations=10
 
 
   openblas_cmake:
-    if: "github.repository == 'numpy/numpy'"
+    if: github.repository == 'numpy/numpy'
     runs-on: ubuntu-latest
     name: "OpenBLAS with CMake"
     steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: recursive
-        fetch-depth: 0
-    - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        fetch-tags: true
+        persist-credentials: false
+    - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
       with:
         python-version: '3.11'
 
     - name: Install dependencies
       run: |
-        pip install -r build_requirements.txt
-        pip install pytest pytest-xdist hypothesis typing_extensions
+        pip install -r requirements/build_requirements.txt
+        pip install pytest pytest-xdist hypothesis typing_extensions pytest-timeout
+        sudo apt-get update
         sudo apt-get install libopenblas-dev cmake
         sudo apt-get remove pkg-config
 
@@ -204,25 +215,27 @@ jobs:
       run: spin build -- -Ddisable-optimization=true -Dallow-noblas=false
 
     - name: Test
-      run: spin test -j auto -- numpy/linalg
+      run: spin test -j auto -- numpy/linalg  --timeout=600 --durations=10
 
  
   netlib-debian:
-    if: "github.repository == 'numpy/numpy'"
+    if: github.repository == 'numpy/numpy'
     runs-on: ubuntu-latest
     name: "Debian libblas/liblapack"
     steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: recursive
-        fetch-depth: 0
-    - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        fetch-tags: true
+        persist-credentials: false
+    - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
       with:
         python-version: '3.11'
 
     - name: Install dependencies
       run: |
-        pip install -r build_requirements.txt
+        pip install -r requirements/build_requirements.txt
+        sudo apt-get update
         sudo apt-get install liblapack-dev pkg-config
 
     - name: Build
@@ -231,12 +244,12 @@ jobs:
 
     - name: Test
       run: |
-        pip install pytest pytest-xdist hypothesis typing_extensions
-        spin test -j auto -- numpy/linalg
+        pip install pytest pytest-xdist hypothesis typing_extensions pytest-timeout
+        spin test -j auto -- numpy/linalg  --timeout=600 --durations=10
 
 
   netlib-split:
-    if: "github.repository == 'numpy/numpy'"
+    if: github.repository == 'numpy/numpy'
     runs-on: ubuntu-latest
     container: opensuse/tumbleweed
     name: "OpenSUSE Netlib BLAS/LAPACK"
@@ -247,14 +260,15 @@ jobs:
         # If it is needed in the future, use install name `pkgconf-pkg-config`
         zypper install -y git gcc-c++ python3-pip python3-devel blas cblas lapack
 
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: recursive
-        fetch-depth: 0
+        fetch-tags: true
+        persist-credentials: false
 
     - name: Install PyPI dependencies
       run: |
-        pip install --break-system-packages -r build_requirements.txt
+        pip install --break-system-packages -r requirements/build_requirements.txt
 
     - name: Build
       run: |
@@ -262,27 +276,28 @@ jobs:
 
     - name: Test
       run: |
-        pip install --break-system-packages pytest pytest-xdist hypothesis typing_extensions
-        spin test -j auto -- numpy/linalg
+        pip install --break-system-packages pytest pytest-xdist hypothesis typing_extensions pytest-timeout
+        spin test -j auto -- numpy/linalg  --timeout=600 --durations=10
 
 
   mkl:
-    if: "github.repository == 'numpy/numpy'"
+    if: github.repository == 'numpy/numpy'
     runs-on: ubuntu-latest
     name: "MKL (LP64, ILP64, SDL)"
     steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: recursive
-        fetch-depth: 0
-    - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        fetch-tags: true
+        persist-credentials: false
+    - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
       with:
         python-version: '3.11'
 
     - name: Install dependencies
       run: |
-        pip install -r build_requirements.txt
-        pip install pytest pytest-xdist hypothesis typing_extensions
+        pip install -r requirements/build_requirements.txt
+        pip install pytest pytest-xdist hypothesis typing_extensions pytest-timeout
         pip install mkl mkl-devel
 
     - name: Repair MKL pkg-config files and symlinks
@@ -306,7 +321,7 @@ jobs:
         spin build -- -Ddisable-optimization=true -Dallow-noblas=false
 
     - name: Test
-      run: spin test -- numpy/linalg
+      run: spin test -- numpy/linalg --timeout=600 --durations=10
 
     - name: Build with ILP64
       run: |
@@ -315,7 +330,7 @@ jobs:
         spin build -- -Duse-ilp64=true -Ddisable-optimization=true -Dallow-noblas=false
 
     - name: Test
-      run: spin test -- numpy/linalg
+      run: spin test -- numpy/linalg --timeout=600 --durations=10
 
     - name: Build without pkg-config (default options, SDL)
       run: |
@@ -327,25 +342,27 @@ jobs:
         spin build -- -Ddisable-optimization=true -Dallow-noblas=false
 
     - name: Test
-      run: spin test -- numpy/linalg
+      run: spin test -- numpy/linalg --timeout=600 --durations=10
 
   blis:
-    if: "github.repository == 'numpy/numpy'"
+    if: github.repository == 'numpy/numpy'
     runs-on: ubuntu-latest
     name: "BLIS"
     steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: recursive
-        fetch-depth: 0
-    - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        fetch-tags: true
+        persist-credentials: false
+    - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
       with:
         python-version: '3.11'
 
     - name: Install dependencies
       run: |
-        pip install -r build_requirements.txt
-        pip install pytest pytest-xdist hypothesis typing_extensions
+        pip install -r requirements/build_requirements.txt
+        pip install pytest pytest-xdist hypothesis typing_extensions pytest-timeout
+        sudo apt-get update
         sudo apt-get install libblis-dev libopenblas-dev pkg-config
 
     - name: Add BLIS pkg-config file
@@ -362,25 +379,27 @@ jobs:
       run: spin build -- -Dblas=blis -Ddisable-optimization=true -Dallow-noblas=false
 
     - name: Test
-      run: spin test -- numpy/linalg
+      run: spin test -- numpy/linalg --timeout=600 --durations=10
 
   atlas:
-    if: "github.repository == 'numpy/numpy'"
+    if: github.repository == 'numpy/numpy'
     runs-on: ubuntu-latest
     name: "ATLAS"
     steps:
-    - uses: actions/checkout@b4ffde65f46336ab88eb53be808477a3936bae11 # v4.1.1
+    - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       with:
         submodules: recursive
-        fetch-depth: 0
-    - uses: actions/setup-python@0a5c61591373683505ea898e09a3ea4f39ef2b9c # v5.0.0
+        fetch-tags: true
+        persist-credentials: false
+    - uses: actions/setup-python@42375524e23c412d93fb67b49958b491fce71c38 # v5.4.0
       with:
         python-version: '3.11'
 
     - name: Install dependencies
       run: |
-        pip install -r build_requirements.txt
-        pip install pytest pytest-xdist hypothesis typing_extensions
+        pip install -r requirements/build_requirements.txt
+        pip install pytest pytest-xdist hypothesis typing_extensions pytest-timeout
+        sudo apt-get update
         sudo apt-get install libatlas-base-dev pkg-config
 
     - name: Build

@@ -15,6 +15,7 @@
 #include "alloc.h"
 #include "ctors.h"
 #include "common.h"
+#include "dtypemeta.h"
 #include "simd/simd.h"
 
 #include <string.h>
@@ -100,7 +101,7 @@ minmax(const npy_intp *data, npy_intp data_len, npy_intp *mn, npy_intp *mx)
  * arr_bincount is registered as bincount.
  *
  * bincount accepts one, two or three arguments. The first is an array of
- * non-negative integers The second, if present, is an array of weights,
+ * non-negative integers. The second, if present, is an array of weights,
  * which must be promotable to double. Call these arguments list and
  * weight. Both must be one-dimensional with len(weight) == len(list). If
  * weight is not present then bincount(list)[i] is the number of occurrences
@@ -129,22 +130,77 @@ arr_bincount(PyObject *NPY_UNUSED(self), PyObject *const *args,
         return NULL;
     }
 
-    lst = (PyArrayObject *)PyArray_ContiguousFromAny(list, NPY_INTP, 1, 1);
+    /*
+     * Accepting arbitrary lists that are cast to NPY_INTP, possibly
+     * losing precision because of unsafe casts, is deprecated.  We
+     * continue to use PyArray_ContiguousFromAny(list, NPY_INTP, 1, 1)
+     * to convert the input during the deprecation period, but we also
+     * check to see if a deprecation warning should be generated.
+     * Some refactoring will be needed when the deprecation expires.
+     */
+
+    /* Check to see if we should generate a deprecation warning. */
+    if (!PyArray_Check(list)) {
+        /* list is not a numpy array, so convert it. */
+        PyArrayObject *tmp1 = (PyArrayObject *)PyArray_FromAny(
+                                                    list, NULL, 1, 1,
+                                                    NPY_ARRAY_DEFAULT, NULL);
+        if (tmp1 == NULL) {
+            goto fail;
+        }
+        if (PyArray_SIZE(tmp1) > 0) {
+            /* The input is not empty, so convert it to NPY_INTP. */
+            int flags = NPY_ARRAY_WRITEABLE | NPY_ARRAY_ALIGNED | NPY_ARRAY_C_CONTIGUOUS;
+            if (PyArray_ISINTEGER(tmp1)) {
+                flags = flags | NPY_ARRAY_FORCECAST;
+            }
+            PyArray_Descr* local_dtype = PyArray_DescrFromType(NPY_INTP);
+            lst = (PyArrayObject *)PyArray_FromAny((PyObject *)tmp1, local_dtype, 1, 1, flags, NULL);
+            Py_DECREF(tmp1);
+            if (lst == NULL) {
+                /* Failed converting to NPY_INTP. */
+                if (PyErr_ExceptionMatches(PyExc_TypeError)) {
+                    PyErr_Clear();
+                    /* Deprecated 2024-08-02, NumPy 2.1 */
+                    if (DEPRECATE("Non-integer input passed to bincount. In a "
+                                  "future version of NumPy, this will be an "
+                                  "error. (Deprecated NumPy 2.1)") < 0) {
+                        goto fail;
+                    }
+                }
+                else {
+                    /* Failure was not a TypeError. */
+                    goto fail;
+                }
+            }
+        }
+        else {
+            /* Got an empty list. */
+            Py_DECREF(tmp1);
+        }
+    }
+
     if (lst == NULL) {
-        goto fail;
+        int flags = NPY_ARRAY_WRITEABLE | NPY_ARRAY_ALIGNED | NPY_ARRAY_C_CONTIGUOUS;
+        if (PyArray_Check((PyObject *)list) &&
+            PyArray_ISINTEGER((PyArrayObject *)list)) {
+            flags = flags | NPY_ARRAY_FORCECAST;
+        }
+        PyArray_Descr* local_dtype = PyArray_DescrFromType(NPY_INTP);
+        lst = (PyArrayObject *)PyArray_FromAny(list, local_dtype, 1, 1, flags, NULL);
+        if (lst == NULL) {
+            goto fail;
+        }
     }
     len = PyArray_SIZE(lst);
 
     /*
-     * This if/else if can be removed by changing the argspec to O|On above,
-     * once we retire the deprecation
+     * This if/else if can be removed by changing the argspec above,
      */
     if (mlength == Py_None) {
-        /* NumPy 1.14, 2017-06-01 */
-        if (DEPRECATE("0 should be passed as minlength instead of None; "
-                      "this will error in future.") < 0) {
-            goto fail;
-        }
+        PyErr_SetString(PyExc_TypeError,
+             "use 0 instead of None for minlength");
+        goto fail;
     }
     else if (mlength != NULL) {
         minlength = PyArray_PyIntAsIntp(mlength);
@@ -297,7 +353,7 @@ arr_place(PyObject *NPY_UNUSED(self), PyObject *args, PyObject *kwdict)
 
     ni = PyArray_SIZE(array);
     dest = PyArray_DATA(array);
-    chunk = PyArray_DESCR(array)->elsize;
+    chunk = PyArray_ITEMSIZE(array);
     mask = (PyArrayObject *)PyArray_FROM_OTF(mask0, NPY_BOOL,
                                 NPY_ARRAY_CARRAY | NPY_ARRAY_FORCECAST);
     if (mask == NULL) {
@@ -350,7 +406,7 @@ arr_place(PyObject *NPY_UNUSED(self), PyObject *args, PyObject *kwdict)
     src = PyArray_DATA(values);
     j = 0;
 
-    copyswap = PyArray_DESCR(array)->f->copyswap;
+    copyswap = PyDataType_GetArrFuncs(PyArray_DESCR(array))->copyswap;
     NPY_BEGIN_THREADS_DESCR(PyArray_DESCR(array));
     for (i = 0; i < ni; i++) {
         if (mask_data[i]) {
@@ -1413,14 +1469,7 @@ arr_add_docstring(PyObject *NPY_UNUSED(dummy), PyObject *const *args, Py_ssize_t
 
     /* Don't add docstrings */
 #if PY_VERSION_HEX > 0x030b0000
-    static long optimize = -1000;
-    if (optimize < 0) {
-        PyObject *flags = PySys_GetObject("flags");  /* borrowed object */
-        PyObject *level = PyObject_GetAttrString(flags, "optimize");
-        optimize = PyLong_AsLong(level);
-        Py_DECREF(level);
-    }
-    if (optimize > 1) {
+    if (npy_static_cdata.optimize > 1) {
 #else
     if (Py_OptimizeFlag > 1) {
 #endif
@@ -1753,15 +1802,6 @@ fail:
 static PyObject *
 unpack_bits(PyObject *input, int axis, PyObject *count_obj, char order)
 {
-    static int unpack_init = 0;
-    /*
-     * lookuptable for bitorder big as it has been around longer
-     * bitorder little is handled via byteswapping in the loop
-     */
-    static union {
-        npy_uint8  bytes[8];
-        npy_uint64 uint64;
-    } unpack_lookup_big[256];
     PyArrayObject *inp;
     PyArrayObject *new = NULL;
     PyArrayObject *out = NULL;
@@ -1847,22 +1887,6 @@ unpack_bits(PyObject *input, int axis, PyObject *count_obj, char order)
         goto fail;
     }
 
-    /*
-     * setup lookup table under GIL, 256 8 byte blocks representing 8 bits
-     * expanded to 1/0 bytes
-     */
-    if (unpack_init == 0) {
-        npy_intp j;
-        for (j=0; j < 256; j++) {
-            npy_intp k;
-            for (k=0; k < 8; k++) {
-                npy_uint8 v = (j & (1 << k)) == (1 << k);
-                unpack_lookup_big[j].bytes[7 - k] = v;
-            }
-        }
-        unpack_init = 1;
-    }
-
     count = PyArray_DIM(new, axis) * 8;
     if (outdims[axis] > count) {
         in_n = count / 8;
@@ -1889,7 +1913,7 @@ unpack_bits(PyObject *input, int axis, PyObject *count_obj, char order)
             /* for unity stride we can just copy out of the lookup table */
             if (order == 'b') {
                 for (index = 0; index < in_n; index++) {
-                    npy_uint64 v = unpack_lookup_big[*inptr].uint64;
+                    npy_uint64 v = npy_static_cdata.unpack_lookup_big[*inptr].uint64;
                     memcpy(outptr, &v, 8);
                     outptr += 8;
                     inptr += in_stride;
@@ -1897,7 +1921,7 @@ unpack_bits(PyObject *input, int axis, PyObject *count_obj, char order)
             }
             else {
                 for (index = 0; index < in_n; index++) {
-                    npy_uint64 v = unpack_lookup_big[*inptr].uint64;
+                    npy_uint64 v = npy_static_cdata.unpack_lookup_big[*inptr].uint64;
                     if (order != 'b') {
                         v = npy_bswap8(v);
                     }
@@ -1908,7 +1932,7 @@ unpack_bits(PyObject *input, int axis, PyObject *count_obj, char order)
             }
             /* Clean up the tail portion */
             if (in_tail) {
-                npy_uint64 v = unpack_lookup_big[*inptr].uint64;
+                npy_uint64 v = npy_static_cdata.unpack_lookup_big[*inptr].uint64;
                 if (order != 'b') {
                     v = npy_bswap8(v);
                 }

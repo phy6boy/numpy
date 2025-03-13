@@ -15,7 +15,7 @@ possible as well. Here are links to the NumPy "build recipes" on those
 distros:
 
 - `Void Linux <https://github.com/void-linux/void-packages/blob/master/srcpkgs/python3-numpy/template>`_
-- `Nix <https://github.com/nixos/nixpkgs/blob/master/pkgs/development/python-modules/numpy/default.nix>`_
+- `Nix <https://github.com/NixOS/nixpkgs/tree/master/pkgs/development/python-modules/numpy>`_
 - `Conda-forge <https://github.com/conda-forge/numpy-feedstock/blob/main/recipe/build.sh>`_
 
 See also `Meson's documentation on cross compilation
@@ -24,7 +24,7 @@ may need to pass to Meson to successfully cross compile.
 
 One possible hiccup is that the build requires running a compiled executable in
 order to determine the ``long double`` format for the host platform. This may be
-an obstable, since it requires ``crossenv`` or QEMU to run the host (cross)
+an obstacle, since it requires ``crossenv`` or QEMU to run the host (cross)
 Python. To avoid this problem, specify the paths to the relevant directories in
 your *cross file*:
 

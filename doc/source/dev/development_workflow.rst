@@ -166,16 +166,20 @@ Standard acronyms to start the commit message with are::
    BENCH: changes to the benchmark suite
    BLD: change related to building numpy
    BUG: bug fix
+   CI: continuous integration
    DEP: deprecate something, or remove a deprecated object
    DEV: development tool or utility
    DOC: documentation
    ENH: enhancement
    MAINT: maintenance commit (refactoring, typos, etc.)
+   MNT: alias for MAINT
+   NEP: NumPy enhancement proposals
+   REL: related to releasing numpy
    REV: revert an earlier commit
    STY: style fix (whitespace, PEP8)
    TST: addition or modification of tests
    TYP: static typing
-   REL: related to releasing numpy
+   WIP: work in progress, do not merge
 
 Commands to skip continuous integration
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
@@ -226,7 +230,7 @@ these fragments in each commit message of a PR:
 Test building wheels
 ~~~~~~~~~~~~~~~~~~~~
 
-Numpy currently uses `cibuildwheel <https://https://cibuildwheel.readthedocs.io/en/stable/>`_
+Numpy currently uses `cibuildwheel <https://cibuildwheel.readthedocs.io/en/stable/>`_
 in order to build wheels through continuous integration services. To save resources, the
 cibuildwheel wheel builders are not run by default on every single PR or commit to main.
 

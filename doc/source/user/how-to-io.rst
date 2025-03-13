@@ -327,7 +327,7 @@ created with NumPy 1.26.
 Convert from a pandas DataFrame to a NumPy array
 ================================================
 
-See :meth:`pandas.DataFrame.to_numpy`.
+See :meth:`pandas.Series.to_numpy`.
 
 Save/restore using `~numpy.ndarray.tofile` and `~numpy.fromfile`
 ================================================================
@@ -343,6 +343,6 @@ storage.
 
    >>> import os
    >>> # list all files created in testsetup. If needed there are
-   >>> # convenienes in e.g. astroquery to do this more automatically
+   >>> # conveniences in e.g. astroquery to do this more automatically
    >>> for filename in ['csv.txt', 'fixedwidth.txt', 'nan.txt', 'skip.txt', 'tabs.txt']:
    ...     os.remove(filename)

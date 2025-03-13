@@ -14,7 +14,8 @@ import numpy._core._multiarray_umath as ncu
 from numpy._core._rational_tests import rational
 
 from numpy.testing import (
-    assert_array_equal, assert_warns, IS_PYPY)
+    assert_array_equal, assert_warns, IS_PYPY, IS_64BIT
+)
 
 
 def arraylikes():
@@ -38,7 +39,7 @@ def arraylikes():
 
     yield subclass
 
-    class _SequenceLike():
+    class _SequenceLike:
         # Older NumPy versions, sometimes cared whether a protocol array was
         # also _SequenceLike.  This shouldn't matter, but keep it for now
         # for __array__ and not the others.
@@ -53,8 +54,10 @@ def arraylikes():
         def __init__(self, a):
             self.a = a
 
-        def __array__(self, dtype=None):
-            return self.a
+        def __array__(self, dtype=None, copy=None):
+            if dtype is None:
+                return self.a
+            return self.a.astype(dtype)
 
     yield param(ArrayDunder, id="__array__")
 
@@ -88,10 +91,10 @@ def scalar_instances(times=True, extended_precision=True, user_dtype=True):
         yield param(np.sqrt(np.longdouble(5)), id="longdouble")
 
     # Complex:
-    yield param(np.sqrt(np.complex64(2+3j)), id="complex64")
-    yield param(np.sqrt(np.complex128(2+3j)), id="complex128")
+    yield param(np.sqrt(np.complex64(2 + 3j)), id="complex64")
+    yield param(np.sqrt(np.complex128(2 + 3j)), id="complex128")
     if extended_precision:
-        yield param(np.sqrt(np.clongdouble(2+3j)), id="clongdouble")
+        yield param(np.sqrt(np.clongdouble(2 + 3j)), id="clongdouble")
 
     # Bool:
     # XFAIL: Bool should be added, but has some bad properties when it
@@ -305,7 +308,7 @@ class TestScalarDiscovery:
             scalar = scalar.values[0]
 
             if dtype.type == np.void:
-               if scalar.dtype.fields is not None and dtype.fields is None:
+                if scalar.dtype.fields is not None and dtype.fields is None:
                     # Here, coercion to "V6" works, but the cast fails.
                     # Since the types are identical, SETITEM takes care of
                     # this, but has different rules than the cast.
@@ -467,7 +470,6 @@ class TestTimeScalars:
             # the explicit cast fails:
             np.array(scalar).astype(dtype)
 
-
     @pytest.mark.parametrize(["val", "unit"],
             [param(123, "s", id="[s]"), param(123, "D", id="[D]")])
     def test_coercion_assignment_timedelta(self, val, unit):
@@ -596,6 +598,7 @@ class TestBadSequences:
     def test_growing_list(self):
         # List to coerce, `mylist` will append to it during coercion
         obj = []
+
         class mylist(list):
             def __len__(self):
                 obj.append([1, 2])
@@ -613,6 +616,7 @@ class TestBadSequences:
     def test_mutated_list(self):
         # List to coerce, `mylist` will mutate the first element
         obj = []
+
         class mylist(list):
             def __len__(self):
                 obj[0] = [2, 3]  # replace with a different list.
@@ -626,6 +630,7 @@ class TestBadSequences:
     def test_replace_0d_array(self):
         # List to coerce, `mylist` will mutate the first element
         obj = []
+
         class baditem:
             def __len__(self):
                 obj[0][0] = 2  # replace with a different list.
@@ -706,7 +711,7 @@ class TestArrayLikes:
             def __array_struct__(self):
                 pass
 
-            def __array__(self):
+            def __array__(self, dtype=None, copy=None):
                 pass
 
         arr = np.array(ArrayLike)
@@ -714,8 +719,7 @@ class TestArrayLikes:
         arr = np.array([ArrayLike])
         assert arr[0] is ArrayLike
 
-    @pytest.mark.skipif(
-            np.dtype(np.intp).itemsize < 8, reason="Needs 64bit platform")
+    @pytest.mark.skipif(not IS_64BIT, reason="Needs 64bit platform")
     def test_too_large_array_error_paths(self):
         """Test the error paths, including for memory leaks"""
         arr = np.array(0, dtype="uint8")
@@ -753,12 +757,24 @@ class TestArrayLikes:
         class BadSequence:
             def __len__(self):
                 raise error
+
             def __getitem__(self):
                 # must have getitem to be a Sequence
                 return 1
 
         with pytest.raises(error):
             np.array(BadSequence())
+
+    def test_array_interface_descr_optional(self):
+        # The descr should be optional regression test for gh-27249
+        arr = np.ones(10, dtype="V10")
+        iface = arr.__array_interface__
+        iface.pop("descr")
+
+        class MyClass:
+            __array_interface__ = iface
+
+        assert_array_equal(np.asarray(MyClass), arr)
 
 
 class TestAsArray:
@@ -832,7 +848,7 @@ class TestSpecialAttributeLookupFailure:
 
     class WeirdArrayLike:
         @property
-        def __array__(self):
+        def __array__(self, dtype=None, copy=None):
             raise RuntimeError("oops!")
 
     class WeirdArrayInterface:
@@ -851,14 +867,14 @@ def test_subarray_from_array_construction():
     # Arrays are more complex, since they "broadcast" on success:
     arr = np.array([1, 2])
 
-    res = arr.astype("(2)i,")
+    res = arr.astype("2i")
     assert_array_equal(res, [[1, 1], [2, 2]])
 
-    res = np.array(arr, dtype="(2)i,")
+    res = np.array(arr, dtype="(2,)i")
 
     assert_array_equal(res, [[1, 1], [2, 2]])
 
-    res = np.array([[(1,), (2,)], arr], dtype="(2)i,")
+    res = np.array([[(1,), (2,)], arr], dtype="2i")
     assert_array_equal(res, [[[1, 1], [2, 2]], [[1, 1], [2, 2]]])
 
     # Also try a multi-dimensional example:

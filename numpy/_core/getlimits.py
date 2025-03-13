@@ -3,6 +3,7 @@
 """
 __all__ = ['finfo', 'iinfo']
 
+import types
 import warnings
 
 from .._utils import set_module
@@ -128,28 +129,30 @@ _convert_to_float = {
 # Parameters for creating MachAr / MachAr-like objects
 _title_fmt = 'numpy {} precision floating point number'
 _MACHAR_PARAMS = {
-    ntypes.double: dict(
-        itype = ntypes.int64,
-        fmt = '%24.16e',
-        title = _title_fmt.format('double')),
-    ntypes.single: dict(
-        itype = ntypes.int32,
-        fmt = '%15.7e',
-        title = _title_fmt.format('single')),
-    ntypes.longdouble: dict(
-        itype = ntypes.longlong,
-        fmt = '%s',
-        title = _title_fmt.format('long double')),
-    ntypes.half: dict(
-        itype = ntypes.int16,
-        fmt = '%12.5e',
-        title = _title_fmt.format('half'))}
+    ntypes.double: {
+        'itype': ntypes.int64,
+        'fmt': '%24.16e',
+        'title': _title_fmt.format('double')},
+    ntypes.single: {
+        'itype': ntypes.int32,
+        'fmt': '%15.7e',
+        'title': _title_fmt.format('single')},
+    ntypes.longdouble: {
+        'itype': ntypes.longlong,
+        'fmt': '%s',
+        'title': _title_fmt.format('long double')},
+    ntypes.half: {
+        'itype': ntypes.int16,
+        'fmt': '%12.5e',
+        'title': _title_fmt.format('half')}}
 
 # Key to identify the floating point type.  Key is result of
-# ftype('-0.1').newbyteorder('<').tobytes()
 #
-# 20230201 - use (ftype(-1.0) / ftype(10.0)).newbyteorder('<').tobytes()
-#            instead because stold may have deficiencies on some platforms.
+#    ftype = np.longdouble        # or float64, float32, etc.
+#    v = (ftype(-1.0) / ftype(10.0))
+#    v.view(v.dtype.newbyteorder('<')).tobytes()
+#
+# Uses division to work around deficiencies in strtold on some platforms.
 # See:
 # https://perl5.git.perl.org/perl.git/blob/3118d7d684b56cbeb702af874f4326683c45f045:/Configure
 
@@ -475,6 +478,7 @@ class finfo:
 
     Examples
     --------
+    >>> import numpy as np
     >>> np.finfo(np.float64).dtype
     dtype('float64')
     >>> np.finfo(np.complex64).dtype
@@ -483,6 +487,8 @@ class finfo:
     """
 
     _finfo_cache = {}
+
+    __class_getitem__ = classmethod(types.GenericAlias)
 
     def __new__(cls, dtype):
         try:
@@ -661,6 +667,7 @@ class iinfo:
     --------
     With types:
 
+    >>> import numpy as np
     >>> ii16 = np.iinfo(np.int16)
     >>> ii16.min
     -32768
@@ -685,6 +692,8 @@ class iinfo:
     _min_vals = {}
     _max_vals = {}
 
+    __class_getitem__ = classmethod(types.GenericAlias)
+
     def __init__(self, int_type):
         try:
             self.dtype = numeric.dtype(int_type)
@@ -705,7 +714,7 @@ class iinfo:
             try:
                 val = iinfo._min_vals[self.key]
             except KeyError:
-                val = int(-(1 << (self.bits-1)))
+                val = int(-(1 << (self.bits - 1)))
                 iinfo._min_vals[self.key] = val
             return val
 
@@ -718,7 +727,7 @@ class iinfo:
             if self.kind == 'u':
                 val = int((1 << self.bits) - 1)
             else:
-                val = int((1 << (self.bits-1)) - 1)
+                val = int((1 << (self.bits - 1)) - 1)
             iinfo._max_vals[self.key] = val
         return val
 

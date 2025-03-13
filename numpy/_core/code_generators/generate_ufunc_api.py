@@ -18,11 +18,16 @@ extern NPY_NO_EXPORT PyTypeObject PyUFunc_Type;
 #define PyUFunc_API PY_UFUNC_UNIQUE_SYMBOL
 #endif
 
+/* By default do not export API in an .so (was never the case on windows) */
+#ifndef NPY_API_SYMBOL_ATTRIBUTE
+    #define NPY_API_SYMBOL_ATTRIBUTE NPY_VISIBILITY_HIDDEN
+#endif
+
 #if defined(NO_IMPORT) || defined(NO_IMPORT_UFUNC)
-extern void **PyUFunc_API;
+extern NPY_API_SYMBOL_ATTRIBUTE void **PyUFunc_API;
 #else
 #if defined(PY_UFUNC_UNIQUE_SYMBOL)
-void **PyUFunc_API;
+NPY_API_SYMBOL_ATTRIBUTE void **PyUFunc_API;
 #else
 static void **PyUFunc_API=NULL;
 #endif
@@ -33,14 +38,11 @@ static void **PyUFunc_API=NULL;
 static inline int
 _import_umath(void)
 {
+  PyObject *c_api;
   PyObject *numpy = PyImport_ImportModule("numpy._core._multiarray_umath");
   if (numpy == NULL && PyErr_ExceptionMatches(PyExc_ModuleNotFoundError)) {
     PyErr_Clear();
-    numpy = PyImport_ImportModule("numpy._core._multiarray_umath");
-    if (numpy == NULL && PyErr_ExceptionMatches(PyExc_ModuleNotFoundError)) {
-      PyErr_Clear();
-      numpy = PyImport_ImportModule("numpy.core._multiarray_umath");
-    }
+    numpy = PyImport_ImportModule("numpy.core._multiarray_umath");
   }
 
   if (numpy == NULL) {
@@ -49,7 +51,7 @@ _import_umath(void)
       return -1;
   }
 
-  PyObject *c_api = PyObject_GetAttrString(numpy, "_UFUNC_API");
+  c_api = PyObject_GetAttrString(numpy, "_UFUNC_API");
   Py_DECREF(numpy);
   if (c_api == NULL) {
       PyErr_SetString(PyExc_AttributeError, "_UFUNC_API not found");
@@ -111,6 +113,16 @@ _import_umath(void)
                     "numpy._core.umath failed to import");\
         }\
     } while(0)
+
+
+static inline int
+PyUFunc_ImportUFuncAPI()
+{
+    if (NPY_UNLIKELY(PyUFunc_API == NULL)) {
+        import_umath1(-1);
+    }
+    return 0;
+}
 
 #endif
 """

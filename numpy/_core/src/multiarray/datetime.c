@@ -16,7 +16,7 @@
 #include "numpyos.h"
 
 #include "npy_config.h"
-#include "npy_pycompat.h"
+
 
 #include "common.h"
 #include "numpy/arrayscalars.h"
@@ -414,36 +414,6 @@ NpyDatetime_ConvertDatetimeStructToDatetime64(PyArray_DatetimeMetaData *meta,
 }
 
 /*NUMPY_API
- * Create a datetime value from a filled datetime struct and resolution unit.
- *
- * TO BE REMOVED - NOT USED INTERNALLY.
- */
-NPY_NO_EXPORT npy_datetime
-PyArray_DatetimeStructToDatetime(
-        NPY_DATETIMEUNIT NPY_UNUSED(fr), npy_datetimestruct *NPY_UNUSED(d))
-{
-    PyErr_SetString(PyExc_RuntimeError,
-            "The NumPy PyArray_DatetimeStructToDatetime function has "
-            "been removed");
-    return -1;
-}
-
-/*NUMPY_API
- * Create a timedelta value from a filled timedelta struct and resolution unit.
- *
- * TO BE REMOVED - NOT USED INTERNALLY.
- */
-NPY_NO_EXPORT npy_datetime
-PyArray_TimedeltaStructToTimedelta(
-        NPY_DATETIMEUNIT NPY_UNUSED(fr), npy_timedeltastruct *NPY_UNUSED(d))
-{
-    PyErr_SetString(PyExc_RuntimeError,
-            "The NumPy PyArray_TimedeltaStructToTimedelta function has "
-            "been removed");
-    return -1;
-}
-
-/*NUMPY_API
  *
  * Converts a datetime based on the given metadata into a datetimestruct
  */
@@ -604,56 +574,18 @@ NpyDatetime_ConvertDatetime64ToDatetimeStruct(
 }
 
 
-/*NUMPY_API
- * Fill the datetime struct from the value and resolution unit.
- *
- * TO BE REMOVED - NOT USED INTERNALLY.
- */
-NPY_NO_EXPORT void
-PyArray_DatetimeToDatetimeStruct(
-        npy_datetime NPY_UNUSED(val), NPY_DATETIMEUNIT NPY_UNUSED(fr),
-        npy_datetimestruct *result)
-{
-    PyErr_SetString(PyExc_RuntimeError,
-            "The NumPy PyArray_DatetimeToDatetimeStruct function has "
-            "been removed");
-    memset(result, -1, sizeof(npy_datetimestruct));
-}
-
-/*
- * FIXME: Overflow is not handled at all
- *   To convert from Years or Months,
- *   multiplication by the average is done
- */
-
-/*NUMPY_API
- * Fill the timedelta struct from the timedelta value and resolution unit.
- *
- * TO BE REMOVED - NOT USED INTERNALLY.
- */
-NPY_NO_EXPORT void
-PyArray_TimedeltaToTimedeltaStruct(
-        npy_timedelta NPY_UNUSED(val), NPY_DATETIMEUNIT NPY_UNUSED(fr),
-        npy_timedeltastruct *result)
-{
-    PyErr_SetString(PyExc_RuntimeError,
-            "The NumPy PyArray_TimedeltaToTimedeltaStruct function has "
-            "been removed");
-    memset(result, -1, sizeof(npy_timedeltastruct));
-}
-
 /*
  * Creates a datetime or timedelta dtype using a copy of the provided metadata.
  */
 NPY_NO_EXPORT PyArray_Descr *
 create_datetime_dtype(int type_num, PyArray_DatetimeMetaData *meta)
 {
-    PyArray_Descr *dtype = NULL;
+    _PyArray_LegacyDescr *dtype = NULL;
     PyArray_DatetimeMetaData *dt_data;
 
     /* Create a default datetime or timedelta */
     if (type_num == NPY_DATETIME || type_num == NPY_TIMEDELTA) {
-        dtype = PyArray_DescrNewFromType(type_num);
+        dtype = (_PyArray_LegacyDescr *)PyArray_DescrNewFromType(type_num);
     }
     else {
         PyErr_SetString(PyExc_RuntimeError,
@@ -671,7 +603,7 @@ create_datetime_dtype(int type_num, PyArray_DatetimeMetaData *meta)
     /* Copy the metadata */
     *dt_data = *meta;
 
-    return dtype;
+    return (PyArray_Descr *)dtype;
 }
 
 /*
@@ -698,8 +630,8 @@ get_datetime_metadata_from_dtype(PyArray_Descr *dtype)
                 "cannot get datetime metadata from non-datetime type");
         return NULL;
     }
-
-    return &(((PyArray_DatetimeDTypeMetaData *)dtype->c_metadata)->meta);
+    _PyArray_LegacyDescr *ldtype = (_PyArray_LegacyDescr *)dtype;
+    return &(((PyArray_DatetimeDTypeMetaData *)ldtype->c_metadata)->meta);
 }
 
 /* strtol does not know whether to put a const qualifier on endptr, wrap
@@ -1863,12 +1795,9 @@ convert_datetime_metadata_tuple_to_datetime_metadata(PyObject *tuple,
 
     /* (unit, num, event) */
     if (tuple_size == 3) {
-        /* Numpy 1.14, 2017-08-11 */
-        if (DEPRECATE(
-                "When passing a 3-tuple as (unit, num, event), the event "
-                "is ignored (since 1.7) - use (unit, num) instead") < 0) {
-            return -1;
-        }
+        PyErr_SetString(PyExc_ValueError,
+                "Use (unit, num) with no event");
+        return -1;
     }
     /* (unit, num, den, event) */
     else if (tuple_size == 4) {
@@ -1898,13 +1827,11 @@ convert_datetime_metadata_tuple_to_datetime_metadata(PyObject *tuple,
             }
         }
         else if (event != Py_None) {
-            /* Numpy 1.14, 2017-08-11 */
-            if (DEPRECATE(
+            PyErr_SetString(PyExc_ValueError,
                     "When passing a 4-tuple as (unit, num, den, event), the "
-                    "event argument is ignored (since 1.7), so should be None"
-                    ) < 0) {
-                return -1;
-            }
+                    "event argument must be None"
+                    );
+            return -1;
         }
         den = PyLong_AsLong(PyTuple_GET_ITEM(tuple, 2));
         if (error_converting(den)) {
@@ -2256,15 +2183,11 @@ NpyDatetime_ConvertPyDateTimeToDatetimeStruct(
         else {
             PyObject *offset;
             int seconds_offset, minutes_offset;
-
-            /* 2016-01-14, 1.11 */
-            PyErr_Clear();
-            if (DEPRECATE(
-                    "parsing timezone aware datetimes is deprecated; "
-                    "this will raise an error in the future") < 0) {
-                Py_DECREF(tmp);
-                return -1;
-            }
+            if (PyErr_WarnEx(PyExc_UserWarning,
+                "no explicit representation of timezones available for np.datetime64",
+                1) < 0) {
+                    return -1;
+                }
 
             /* The utcoffset function should return a timedelta */
             offset = PyObject_CallMethod(tmp, "utcoffset", "O", obj);
@@ -2475,7 +2398,7 @@ convert_pyobject_to_datetime(PyArray_DatetimeMetaData *meta, PyObject *obj,
         if (arr_meta == NULL) {
             return -1;
         }
-        PyArray_DESCR(arr)->f->copyswap(&dt,
+        PyDataType_GetArrFuncs(PyArray_DESCR(arr))->copyswap(&dt,
                                 PyArray_DATA(arr),
                                 PyArray_ISBYTESWAPPED(arr),
                                 obj);
@@ -2607,7 +2530,6 @@ convert_pyobject_to_timedelta(PyArray_DatetimeMetaData *meta, PyObject *obj,
         /* Parse as an integer */
         else {
             char *strend = NULL;
-
             *out = strtol(str, &strend, 10);
             if (strend - str == len) {
                 succeeded = 1;
@@ -2677,7 +2599,7 @@ convert_pyobject_to_timedelta(PyArray_DatetimeMetaData *meta, PyObject *obj,
         if (arr_meta == NULL) {
             return -1;
         }
-        PyArray_DESCR(arr)->f->copyswap(&dt,
+        PyDataType_GetArrFuncs(PyArray_DESCR(arr))->copyswap(&dt,
                                 PyArray_DATA(arr),
                                 PyArray_ISBYTESWAPPED(arr),
                                 obj);
@@ -2891,6 +2813,136 @@ convert_datetime_to_pyobject(npy_datetime dt, PyArray_DatetimeMetaData *meta)
 }
 
 /*
+ * We require that if d is a PyDateTime, then
+ * hash(numpy.datetime64(d)) == hash(d).
+ * Where possible, convert dt to a PyDateTime and hash it.
+ *
+ * NOTE: "equals" across PyDate, PyDateTime and np.datetime64 is not transitive:
+ * datetime.datetime(1970, 1, 1) == np.datetime64(0, 'us')
+ * np.datetime64(0, 'us') == np.datetime64(0, 'D')
+ * datetime.datetime(1970, 1, 1) != np.datetime64(0, 'D')  # date, not datetime!
+ *
+ * But:
+ * datetime.date(1970, 1, 1) == np.datetime64(0, 'D')
+ *
+ * For hash(datetime64(0, 'D')) we could return either PyDate.hash or PyDateTime.hash.
+ * We choose PyDateTime.hash to match datetime64(0, 'us')
+ */
+NPY_NO_EXPORT npy_hash_t
+datetime_hash(PyArray_DatetimeMetaData *meta, npy_datetime dt)
+{
+    PyObject *obj;
+    npy_hash_t res;
+    npy_datetimestruct dts;
+
+    if (dt == NPY_DATETIME_NAT) {
+        return -1;  /* should have been handled by caller */
+    }
+
+    if (meta->base == NPY_FR_GENERIC) {
+        obj = PyLong_FromLongLong(dt);
+    } else {
+        if (NpyDatetime_ConvertDatetime64ToDatetimeStruct(meta, dt, &dts) < 0) {
+            return -1;
+        }
+
+        if (dts.year < 1 || dts.year > 9999
+            || dts.ps != 0 || dts.as != 0) {
+            /* NpyDatetime_ConvertDatetime64ToDatetimeStruct does memset,
+             * so this is safe from loose struct packing. */
+            obj = PyBytes_FromStringAndSize((const char *)&dts, sizeof(dts));
+        } else {
+            obj = PyDateTime_FromDateAndTime(dts.year, dts.month, dts.day,
+                                             dts.hour, dts.min, dts.sec, dts.us);
+        }
+    }
+
+    if (obj == NULL) {
+        return -1;
+    }
+
+    res = PyObject_Hash(obj);
+
+    Py_DECREF(obj);
+
+    return res;
+}
+
+static int
+convert_timedelta_to_timedeltastruct(PyArray_DatetimeMetaData *meta,
+                                     npy_timedelta td,
+                                     npy_timedeltastruct *out)
+{
+    memset(out, 0, sizeof(npy_timedeltastruct));
+
+    /* Apply the unit multiplier (TODO: overflow treatment...) */
+    td *= meta->num;
+
+    /* Convert to days/seconds/useconds */
+    switch (meta->base) {
+        case NPY_FR_W:
+            out->day = td * 7;
+            break;
+        case NPY_FR_D:
+            out->day = td;
+            break;
+        case NPY_FR_h:
+            out->day = extract_unit_64(&td, 24LL);
+            out->sec = (npy_int32)(td * 60*60);
+            break;
+        case NPY_FR_m:
+            out->day = extract_unit_64(&td, 60LL*24);
+            out->sec = (npy_int32)(td * 60);
+            break;
+        case NPY_FR_s:
+            out->day = extract_unit_64(&td, 60LL*60*24);
+            out->sec = (npy_int32)td;
+            break;
+        case NPY_FR_ms:
+            out->day = extract_unit_64(&td, 1000LL*60*60*24);
+            out->sec = (npy_int32)extract_unit_64(&td, 1000LL);
+            out->us  = (npy_int32)(td * 1000LL);
+            break;
+        case NPY_FR_us:
+            out->day = extract_unit_64(&td, 1000LL*1000*60*60*24);
+            out->sec = (npy_int32)extract_unit_64(&td, 1000LL*1000);
+            out->us  = (npy_int32)td;
+            break;
+        case NPY_FR_ns:
+            out->day = extract_unit_64(&td, 1000LL*1000*1000*60*60*24);
+            out->sec = (npy_int32)extract_unit_64(&td, 1000LL*1000*1000);
+            out->us  = (npy_int32)extract_unit_64(&td, 1000LL);
+            out->ps  = (npy_int32)(td * 1000LL);
+            break;
+        case NPY_FR_ps:
+            out->day = extract_unit_64(&td, 1000LL*1000*1000*1000*60*60*24);
+            out->sec = (npy_int32)extract_unit_64(&td, 1000LL*1000*1000*1000);
+            out->us  = (npy_int32)extract_unit_64(&td, 1000LL*1000);
+            out->ps  = (npy_int32)td;
+            break;
+        case NPY_FR_fs:
+            out->sec = (npy_int32)extract_unit_64(&td, 1000LL*1000*1000*1000*1000);
+            out->us  = (npy_int32)extract_unit_64(&td, 1000LL*1000*1000);
+            out->ps  = (npy_int32)extract_unit_64(&td, 1000LL);
+            out->as  = (npy_int32)(td * 1000LL);
+            break;
+        case NPY_FR_as:
+            out->sec = (npy_int32)extract_unit_64(&td, 1000LL*1000*1000*1000*1000*1000);
+            out->us  = (npy_int32)extract_unit_64(&td, 1000LL*1000*1000*1000);
+            out->ps  = (npy_int32)extract_unit_64(&td, 1000LL*1000);
+            out->as  = (npy_int32)td;
+            break;
+        default:
+            PyErr_SetString(PyExc_RuntimeError,
+                            "NumPy timedelta metadata is corrupted with invalid "
+                            "base unit");
+            return -1;
+    }
+
+    return 0;
+}
+
+/*
  * Converts a timedelta into a PyObject *.
  *
  * Not-a-time is returned as the string "NaT".
@@ -2900,8 +2952,7 @@ convert_datetime_to_pyobject(npy_datetime dt, PyArray_DatetimeMetaData *meta)
 NPY_NO_EXPORT PyObject *
 convert_timedelta_to_pyobject(npy_timedelta td, PyArray_DatetimeMetaData *meta)
 {
-    npy_timedelta value;
-    int days = 0, seconds = 0, useconds = 0;
+    npy_timedeltastruct tds;
 
     /*
      * Convert NaT (not-a-time) into None.
@@ -2921,55 +2972,73 @@ convert_timedelta_to_pyobject(npy_timedelta td, PyArray_DatetimeMetaData *meta)
         return PyLong_FromLongLong(td);
     }
 
-    value = td;
-
-    /* Apply the unit multiplier (TODO: overflow treatment...) */
-    value *= meta->num;
-
-    /* Convert to days/seconds/useconds */
-    switch (meta->base) {
-        case NPY_FR_W:
-            days = value * 7;
-            break;
-        case NPY_FR_D:
-            days = value;
-            break;
-        case NPY_FR_h:
-            days = extract_unit_64(&value, 24ULL);
-            seconds = value*60*60;
-            break;
-        case NPY_FR_m:
-            days = extract_unit_64(&value, 60ULL*24);
-            seconds = value*60;
-            break;
-        case NPY_FR_s:
-            days = extract_unit_64(&value, 60ULL*60*24);
-            seconds = value;
-            break;
-        case NPY_FR_ms:
-            days     = extract_unit_64(&value, 1000ULL*60*60*24);
-            seconds  = extract_unit_64(&value, 1000ULL);
-            useconds = value*1000;
-            break;
-        case NPY_FR_us:
-            days     = extract_unit_64(&value, 1000ULL*1000*60*60*24);
-            seconds  = extract_unit_64(&value, 1000ULL*1000);
-            useconds = value;
-            break;
-        default:
-            // unreachable, handled by the `if` above
-            assert(NPY_FALSE);
-            break;
+    if (convert_timedelta_to_timedeltastruct(meta, td, &tds) < 0) {
+        return NULL;
     }
+
     /*
      * If it would overflow the datetime.timedelta days, return a raw int
      */
-    if (days < -999999999 || days > 999999999) {
+    if (tds.day < -999999999 || tds.day > 999999999) {
         return PyLong_FromLongLong(td);
     }
     else {
-        return PyDelta_FromDSU(days, seconds, useconds);
+        return PyDelta_FromDSU(tds.day, tds.sec, tds.us);
     }
+}
+
+/*
+ * We require that if d is a PyDelta, then
+ * hash(numpy.timedelta64(d)) == hash(d).
+ * Where possible, convert dt to a PyDelta and hash it.
+ */
+NPY_NO_EXPORT npy_hash_t
+timedelta_hash(PyArray_DatetimeMetaData *meta, npy_timedelta td)
+{
+    PyObject *obj;
+    npy_hash_t res;
+    npy_timedeltastruct tds;
+
+    if (td == NPY_DATETIME_NAT) {
+        return -1;  /* should have been handled by caller */
+    }
+
+    if (meta->base == NPY_FR_GENERIC) {
+        /* generic compares equal to *every* other base, so no single hash works. */
+        PyErr_SetString(PyExc_ValueError, "Can't hash generic timedelta64");
+        return -1;
+    }
+
+    /* Y and M can be converted to each other but not to other units */
+
+    if (meta->base == NPY_FR_Y) {
+        obj = PyLong_FromLongLong(td * 12);
+    } else if (meta->base == NPY_FR_M) {
+        obj = PyLong_FromLongLong(td);
+    } else {
+        if (convert_timedelta_to_timedeltastruct(meta, td, &tds) < 0) {
+            return -1;
+        }
+
+        if (tds.day < -999999999 || tds.day > 999999999
+            || tds.ps != 0 || tds.as != 0) {
+            /* convert_timedelta_to_timedeltastruct does memset,
+             * so this is safe from loose struct packing. */
+            obj = PyBytes_FromStringAndSize((const char *)&tds, sizeof(tds));
+        } else {
+            obj = PyDelta_FromDSU(tds.day, tds.sec, tds.us);
+        }
+    }
+
+    if (obj == NULL) {
+        return -1;
+    }
+
+    res = PyObject_Hash(obj);
+
+    Py_DECREF(obj);
+
+    return res;
 }
 
 /*
@@ -3853,7 +3922,7 @@ time_to_time_get_loop(
 {
     int requires_wrap = 0;
     int inner_aligned = aligned;
-    PyArray_Descr **descrs = context->descriptors;
+    PyArray_Descr *const *descrs = context->descriptors;
     *flags = NPY_METH_NO_FLOATINGPOINT_ERRORS;
 
     PyArray_DatetimeMetaData *meta1 = get_datetime_metadata_from_dtype(descrs[0]);
@@ -4002,7 +4071,7 @@ datetime_to_string_get_loop(
         PyArrayMethod_StridedLoop **out_loop, NpyAuxData **out_transferdata,
         NPY_ARRAYMETHOD_FLAGS *flags)
 {
-    PyArray_Descr **descrs = context->descriptors;
+    PyArray_Descr *const *descrs = context->descriptors;
     *flags = context->method->flags & NPY_METH_RUNTIME_FLAGS;
 
     if (descrs[1]->type_num == NPY_STRING) {
@@ -4062,7 +4131,7 @@ string_to_datetime_cast_get_loop(
         PyArrayMethod_StridedLoop **out_loop, NpyAuxData **out_transferdata,
         NPY_ARRAYMETHOD_FLAGS *flags)
 {
-    PyArray_Descr **descrs = context->descriptors;
+    PyArray_Descr *const *descrs = context->descriptors;
     *flags = context->method->flags & NPY_METH_RUNTIME_FLAGS;
 
     if (descrs[0]->type_num == NPY_STRING) {
@@ -4106,7 +4175,7 @@ PyArray_InitializeDatetimeCasts()
     };
     slots[0].slot = NPY_METH_resolve_descriptors;
     slots[0].pfunc = &time_to_time_resolve_descriptors;
-    slots[1].slot = _NPY_METH_get_loop;
+    slots[1].slot = NPY_METH_get_loop;
     slots[1].pfunc = &time_to_time_get_loop;
     slots[2].slot = 0;
     slots[2].pfunc = NULL;
@@ -4136,7 +4205,7 @@ PyArray_InitializeDatetimeCasts()
 
     slots[0].slot = NPY_METH_resolve_descriptors;
     slots[0].pfunc = &datetime_to_timedelta_resolve_descriptors;
-    slots[1].slot = _NPY_METH_get_loop;
+    slots[1].slot = NPY_METH_get_loop;
     slots[1].pfunc = &legacy_cast_get_strided_loop;
     slots[2].slot = 0;
     slots[2].pfunc = NULL;
@@ -4160,7 +4229,7 @@ PyArray_InitializeDatetimeCasts()
      * Some of these casts can fail (casting to unitless datetime), but these
      * are rather special.
      */
-    for (int num = 0; num < NPY_NTYPES; num++) {
+    for (int num = 0; num < NPY_NTYPES_LEGACY; num++) {
         if (!PyTypeNum_ISNUMBER(num) && num != NPY_BOOL) {
             continue;
         }
@@ -4209,7 +4278,7 @@ PyArray_InitializeDatetimeCasts()
     slots[0].slot = NPY_METH_resolve_descriptors;
     slots[0].pfunc = &time_to_string_resolve_descriptors;
     /* Strided loop differs for the two */
-    slots[1].slot = _NPY_METH_get_loop;
+    slots[1].slot = NPY_METH_get_loop;
     slots[2].slot = 0;
     slots[2].pfunc = NULL;
 
@@ -4258,7 +4327,7 @@ PyArray_InitializeDatetimeCasts()
     /* The default type resolution should work fine. */
     slots[0].slot = NPY_METH_resolve_descriptors;
     slots[0].pfunc = &string_to_datetime_cast_resolve_descriptors;
-    slots[1].slot = _NPY_METH_get_loop;
+    slots[1].slot = NPY_METH_get_loop;
     slots[1].pfunc = &string_to_datetime_cast_get_loop;
     slots[2].slot = 0;
     slots[2].pfunc = NULL;

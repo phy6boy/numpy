@@ -21,7 +21,7 @@ from numpy.random cimport bitgen_t
 from ._common cimport (POISSON_LAM_MAX, CONS_POSITIVE, CONS_NONE,
             CONS_NON_NEGATIVE, CONS_BOUNDED_0_1, CONS_BOUNDED_GT_0_1,
             CONS_BOUNDED_LT_0_1, CONS_GTE_1, CONS_GT_1, LEGACY_CONS_POISSON,
-            LEGACY_CONS_NON_NEGATVE_INBOUNDS_LONG,
+            LEGACY_CONS_NON_NEGATIVE_INBOUNDS_LONG,
             double_fill, cont, kahan_sum, cont_broadcast_3,
             check_array_constraint, check_constraint, disc, discrete_broadcast_iii,
             validate_output_shape
@@ -205,10 +205,13 @@ cdef class RandomState:
         self.set_state(state)
 
     def __reduce__(self):
-        ctor, name_tpl, _ = self._bit_generator.__reduce__()
-
         from ._pickle import __randomstate_ctor
-        return __randomstate_ctor, (name_tpl[0], ctor), self.get_state(legacy=False)
+        # The third argument containing the state is required here since
+        # RandomState contains state information in addition to the state
+        # contained in the bit generator that described the gaussian
+        # generator. This argument is passed to __setstate__ after the
+        # Generator is created.
+        return __randomstate_ctor, (self._bit_generator, ), self.get_state(legacy=False)
 
     cdef _initialize_bit_generator(self, bit_generator):
         self._bit_generator = bit_generator
@@ -301,7 +304,7 @@ cdef class RandomState:
         st['gauss'] = self._aug_state.gauss
         if legacy and not isinstance(self._bit_generator, _MT19937):
             raise ValueError(
-                "legacy can only be True when the underlyign bitgenerator is "
+                "legacy can only be True when the underlying bitgenerator is "
                 "an instance of MT19937."
             )
         if legacy:
@@ -368,15 +371,16 @@ cdef class RandomState:
         else:
             if not isinstance(state, (tuple, list)):
                 raise TypeError('state must be a dict or a tuple.')
-            if state[0] != 'MT19937':
-                raise ValueError('set_state can only be used with legacy MT19937'
-                                 'state instances.')
-            st = {'bit_generator': state[0],
-                  'state': {'key': state[1], 'pos': state[2]}}
-            if len(state) > 3:
-                st['has_gauss'] = state[3]
-                st['gauss'] = state[4]
-                value = st
+            with cython.boundscheck(True):
+                if state[0] != 'MT19937':
+                    raise ValueError('set_state can only be used with legacy '
+                                     'MT19937 state instances.')
+                st = {'bit_generator': state[0],
+                      'state': {'key': state[1], 'pos': state[2]}}
+                if len(state) > 3:
+                    st['has_gauss'] = state[3]
+                    st['gauss'] = state[4]
+                    value = st
 
         self._aug_state.gauss = st.get('gauss', 0.0)
         self._aug_state.has_gauss = st.get('has_gauss', 0)
@@ -714,8 +718,6 @@ cdef class RandomState:
             Desired dtype of the result. Byteorder must be native.
             The default value is long.
 
-            .. versionadded:: 1.11.0
-
             .. warning::
               This function defaults to the C-long dtype, which is 32bit on windows
               and otherwise 64bit on 64bit platforms (and 32bit on 32bit ones).
@@ -857,8 +859,6 @@ cdef class RandomState:
 
         Generates a random sample from a given 1-D array
 
-        .. versionadded:: 1.7.0
-
         .. note::
             New code should use the `~numpy.random.Generator.choice`
             method of a `~numpy.random.Generator` instance instead;
@@ -953,7 +953,7 @@ cdef class RandomState:
         """
 
         # Format and Verify input
-        a = np.array(a, copy=False)
+        a = np.asarray(a)
         if a.ndim == 0:
             try:
                 # __index__ must return an integer by python rules.
@@ -978,7 +978,7 @@ cdef class RandomState:
                     atol = max(atol, np.sqrt(np.finfo(p.dtype).eps))
 
             p = <np.ndarray>np.PyArray_FROM_OTF(
-                p, np.NPY_DOUBLE, np.NPY_ALIGNED | np.NPY_ARRAY_C_CONTIGUOUS)
+                p, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED | np.NPY_ARRAY_C_CONTIGUOUS)
             pix = <double*>np.PyArray_DATA(p)
 
             if p.ndim != 1:
@@ -1012,7 +1012,7 @@ cdef class RandomState:
                 idx = cdf.searchsorted(uniform_samples, side='right')
                 # searchsorted returns a scalar
                 # force cast to int for LLP64
-                idx = np.array(idx, copy=False).astype(np.long, casting='unsafe')
+                idx = np.asarray(idx).astype(np.long, casting='unsafe')
             else:
                 idx = self.randint(0, pop_size, size=shape)
         else:
@@ -1134,7 +1134,7 @@ cdef class RandomState:
 
         >>> x = np.float32(5*0.99999999)
         >>> x
-        5.0
+        np.float32(5.0)
 
 
         Examples
@@ -1164,8 +1164,8 @@ cdef class RandomState:
         cdef double _low, _high, range
         cdef object temp
 
-        alow = <np.ndarray>np.PyArray_FROM_OTF(low, np.NPY_DOUBLE, np.NPY_ALIGNED)
-        ahigh = <np.ndarray>np.PyArray_FROM_OTF(high, np.NPY_DOUBLE, np.NPY_ALIGNED)
+        alow = <np.ndarray>np.PyArray_FROM_OTF(low, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
+        ahigh = <np.ndarray>np.PyArray_FROM_OTF(high, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
 
         if np.PyArray_NDIM(alow) == np.PyArray_NDIM(ahigh) == 0:
             _low = PyFloat_AsDouble(low)
@@ -1547,13 +1547,13 @@ cdef class RandomState:
         >>> mu, sigma = 0, 0.1 # mean and standard deviation
         >>> s = np.random.normal(mu, sigma, 1000)
 
-        Verify the mean and the variance:
+        Verify the mean and the standard deviation:
 
         >>> abs(mu - np.mean(s))
         0.0  # may vary
 
         >>> abs(sigma - np.std(s, ddof=1))
-        0.1  # may vary
+        0.0  # may vary
 
         Display the histogram of the samples, along with
         the probability density function:
@@ -1860,9 +1860,6 @@ cdef class RandomState:
         ----------
         dfnum : float or array_like of floats
             Numerator degrees of freedom, must be > 0.
-
-            .. versionchanged:: 1.14.0
-               Earlier NumPy versions required dfnum > 1.
         dfden : float or array_like of floats
             Denominator degrees of freedom, must be > 0.
         nonc : float or array_like of floats
@@ -1972,7 +1969,7 @@ cdef class RandomState:
         The variable obtained by summing the squares of `df` independent,
         standard normally distributed random variables:
 
-        .. math:: Q = \\sum_{i=0}^{\\mathtt{df}} X^2_i
+        .. math:: Q = \\sum_{i=1}^{\\mathtt{df}} X^2_i
 
         is chi-square distributed, denoted
 
@@ -2021,9 +2018,6 @@ cdef class RandomState:
         ----------
         df : float or array_like of floats
             Degrees of freedom, must be > 0.
-
-            .. versionchanged:: 1.10.0
-               Earlier NumPy versions required dfnum > 1.
         nonc : float or array_like of floats
             Non-centrality, must be non-negative.
         size : int or tuple of ints, optional
@@ -2288,7 +2282,7 @@ cdef class RandomState:
         Draw samples from a von Mises distribution.
 
         Samples are drawn from a von Mises distribution with specified mode
-        (mu) and dispersion (kappa), on the interval [-pi, pi].
+        (mu) and concentration (kappa), on the interval [-pi, pi].
 
         The von Mises distribution (also known as the circular normal
         distribution) is a continuous probability distribution on the unit
@@ -2305,7 +2299,7 @@ cdef class RandomState:
         mu : float or array_like of floats
             Mode ("center") of the distribution.
         kappa : float or array_like of floats
-            Dispersion of the distribution, has to be >=0.
+            Concentration of the distribution, has to be >=0.
         size : int or tuple of ints, optional
             Output shape.  If the given shape is, e.g., ``(m, n, k)``, then
             ``m * n * k`` samples are drawn.  If size is ``None`` (default),
@@ -2329,7 +2323,7 @@ cdef class RandomState:
 
         .. math:: p(x) = \\frac{e^{\\kappa cos(x-\\mu)}}{2\\pi I_0(\\kappa)},
 
-        where :math:`\\mu` is the mode and :math:`\\kappa` the dispersion,
+        where :math:`\\mu` is the mode and :math:`\\kappa` the concentration,
         and :math:`I_0(\\kappa)` is the modified Bessel function of order 0.
 
         The von Mises is named for Richard Edler von Mises, who was born in
@@ -2350,7 +2344,7 @@ cdef class RandomState:
         --------
         Draw samples from the distribution:
 
-        >>> mu, kappa = 0.0, 4.0 # mean and dispersion
+        >>> mu, kappa = 0.0, 4.0 # mean and concentration
         >>> s = np.random.vonmises(mu, kappa, 1000)
 
         Display the histogram of the samples, along with
@@ -3336,9 +3330,9 @@ cdef class RandomState:
         cdef double fleft, fmode, fright
         cdef np.ndarray oleft, omode, oright
 
-        oleft = <np.ndarray>np.PyArray_FROM_OTF(left, np.NPY_DOUBLE, np.NPY_ALIGNED)
-        omode = <np.ndarray>np.PyArray_FROM_OTF(mode, np.NPY_DOUBLE, np.NPY_ALIGNED)
-        oright = <np.ndarray>np.PyArray_FROM_OTF(right, np.NPY_DOUBLE, np.NPY_ALIGNED)
+        oleft = <np.ndarray>np.PyArray_FROM_OTF(left, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
+        omode = <np.ndarray>np.PyArray_FROM_OTF(mode, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
+        oright = <np.ndarray>np.PyArray_FROM_OTF(right, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
 
         if np.PyArray_NDIM(oleft) == np.PyArray_NDIM(omode) == np.PyArray_NDIM(oright) == 0:
             fleft = PyFloat_AsDouble(left)
@@ -3412,7 +3406,7 @@ cdef class RandomState:
 
         Notes
         -----
-        The probability density for the binomial distribution is
+        The probability mass function (PMF) for the binomial distribution is
 
         .. math:: P(N) = \\binom{n}{N}p^N(1-p)^{n-N},
 
@@ -3470,14 +3464,14 @@ cdef class RandomState:
         cdef long *randoms_data
         cdef np.broadcast it
 
-        p_arr = <np.ndarray>np.PyArray_FROM_OTF(p, np.NPY_DOUBLE, np.NPY_ALIGNED)
+        p_arr = <np.ndarray>np.PyArray_FROM_OTF(p, np.NPY_DOUBLE, np.NPY_ARRAY_ALIGNED)
         is_scalar = is_scalar and np.PyArray_NDIM(p_arr) == 0
-        n_arr = <np.ndarray>np.PyArray_FROM_OTF(n, np.NPY_INTP, np.NPY_ALIGNED)
+        n_arr = <np.ndarray>np.PyArray_FROM_OTF(n, np.NPY_INTP, np.NPY_ARRAY_ALIGNED)
         is_scalar = is_scalar and np.PyArray_NDIM(n_arr) == 0
 
         if not is_scalar:
             check_array_constraint(p_arr, 'p', CONS_BOUNDED_0_1)
-            check_array_constraint(n_arr, 'n', LEGACY_CONS_NON_NEGATVE_INBOUNDS_LONG)
+            check_array_constraint(n_arr, 'n', LEGACY_CONS_NON_NEGATIVE_INBOUNDS_LONG)
             if size is not None:
                 randoms = <np.ndarray>np.empty(size, np.long)
             else:
@@ -3503,7 +3497,7 @@ cdef class RandomState:
         _dp = PyFloat_AsDouble(p)
         _in = n
         check_constraint(_dp, 'p', CONS_BOUNDED_0_1)
-        check_constraint(<double>_in, 'n', LEGACY_CONS_NON_NEGATVE_INBOUNDS_LONG)
+        check_constraint(<double>_in, 'n', LEGACY_CONS_NON_NEGATIVE_INBOUNDS_LONG)
 
         if size is None:
             with self.lock:
@@ -3652,7 +3646,7 @@ cdef class RandomState:
 
         Notes
         -----
-        The Poisson distribution
+        The probability mass function (PMF) of Poisson distribution is
 
         .. math:: f(k; \\lambda)=\\frac{\\lambda^k e^{-\\lambda}}{k!}
 
@@ -3740,7 +3734,7 @@ cdef class RandomState:
 
         Notes
         -----
-        The probability density for the Zipf distribution is
+        The probability mass function (PMF) for the Zipf distribution is
 
         .. math:: p(k) = \\frac{k^{-a}}{\\zeta(a)},
 
@@ -3904,7 +3898,7 @@ cdef class RandomState:
 
         Notes
         -----
-        The probability density for the Hypergeometric distribution is
+        The probability mass function (PMF) for the Hypergeometric distribution is
 
         .. math:: P(x) = \\frac{\\binom{g}{x}\\binom{b}{n-x}}{\\binom{g+b}{n}},
 
@@ -3959,9 +3953,9 @@ cdef class RandomState:
         cdef int64_t lngood, lnbad, lnsample
 
         # This legacy function supports "long" values only (checked below).
-        ongood = <np.ndarray>np.PyArray_FROM_OTF(ngood, np.NPY_INT64, np.NPY_ALIGNED)
-        onbad = <np.ndarray>np.PyArray_FROM_OTF(nbad, np.NPY_INT64, np.NPY_ALIGNED)
-        onsample = <np.ndarray>np.PyArray_FROM_OTF(nsample, np.NPY_INT64, np.NPY_ALIGNED)
+        ongood = <np.ndarray>np.PyArray_FROM_OTF(ngood, np.NPY_INT64, np.NPY_ARRAY_ALIGNED)
+        onbad = <np.ndarray>np.PyArray_FROM_OTF(nbad, np.NPY_INT64, np.NPY_ARRAY_ALIGNED)
+        onsample = <np.ndarray>np.PyArray_FROM_OTF(nsample, np.NPY_INT64, np.NPY_ARRAY_ALIGNED)
 
         if np.PyArray_NDIM(ongood) == np.PyArray_NDIM(onbad) == np.PyArray_NDIM(onsample) == 0:
             lngood = <int64_t>ngood
@@ -3971,7 +3965,7 @@ cdef class RandomState:
             if lngood + lnbad < lnsample:
                 raise ValueError("ngood + nbad < nsample")
             out = disc(&legacy_random_hypergeometric, &self._bitgen, size, self.lock, 0, 3,
-                       lngood, 'ngood', LEGACY_CONS_NON_NEGATVE_INBOUNDS_LONG,
+                       lngood, 'ngood', LEGACY_CONS_NON_NEGATIVE_INBOUNDS_LONG,
                        lnbad, 'nbad', CONS_NON_NEGATIVE,
                        lnsample, 'nsample', CONS_GTE_1)
             # Match historical output type
@@ -3981,7 +3975,7 @@ cdef class RandomState:
             raise ValueError("ngood + nbad < nsample")
 
         out = discrete_broadcast_iii(&legacy_random_hypergeometric,&self._bitgen, size, self.lock,
-                                     ongood, 'ngood', LEGACY_CONS_NON_NEGATVE_INBOUNDS_LONG,
+                                     ongood, 'ngood', LEGACY_CONS_NON_NEGATIVE_INBOUNDS_LONG,
                                      onbad, 'nbad', CONS_NON_NEGATIVE,
                                      onsample, 'nsample', CONS_GTE_1)
         # Match historical output type
@@ -4908,6 +4902,7 @@ def ranf(*args, **kwargs):
     return _rand.random_sample(*args, **kwargs)
 
 __all__ = [
+    'RandomState',
     'beta',
     'binomial',
     'bytes',
@@ -4960,5 +4955,18 @@ __all__ = [
     'wald',
     'weibull',
     'zipf',
-    'RandomState',
 ]
+
+seed.__module__ = "numpy.random"
+ranf.__module__ = "numpy.random"
+sample.__module__ = "numpy.random"
+get_bit_generator.__module__ = "numpy.random"
+set_bit_generator.__module__ = "numpy.random"
+
+# The first item in __all__ is 'RandomState', so it can be skipped here.
+for method_name in __all__[1:]:
+    method = getattr(RandomState, method_name, None)
+    if method is not None:
+        method.__module__ = "numpy.random"
+
+del method, method_name

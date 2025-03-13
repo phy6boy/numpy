@@ -126,6 +126,9 @@ def _scalar_str(dtype, short):
         else:
             return "'%sU%d'" % (byteorder, dtype.itemsize / 4)
 
+    elif dtype.type == str:
+        return "'T'"
+
     elif not type(dtype)._legacy:
         return f"'{byteorder}{type(dtype).__name__}{dtype.itemsize * 8}'"
 
@@ -143,6 +146,9 @@ def _scalar_str(dtype, short):
     elif dtype.type == np.timedelta64:
         return "'%sm8%s'" % (byteorder, _datetime_metadata_str(dtype))
 
+    elif dtype.isbuiltin == 2:
+        return dtype.type.__name__
+
     elif np.issubdtype(dtype, np.number):
         # Short repr with endianness, like '<f8'
         if short or dtype.byteorder not in ('=', '|'):
@@ -150,10 +156,7 @@ def _scalar_str(dtype, short):
 
         # Longer repr, like 'float64'
         else:
-            return "'%s%d'" % (_kind_name(dtype), 8*dtype.itemsize)
-
-    elif dtype.isbuiltin == 2:
-        return dtype.type.__name__
+            return "'%s%d'" % (_kind_name(dtype), 8 * dtype.itemsize)
 
     else:
         raise RuntimeError(
@@ -274,9 +277,7 @@ def _is_packed(dtype):
     if align:
         total_offset = _aligned_offset(total_offset, max_alignment)
 
-    if total_offset != dtype.itemsize:
-        return False
-    return True
+    return total_offset == dtype.itemsize
 
 
 def _struct_list_str(dtype):

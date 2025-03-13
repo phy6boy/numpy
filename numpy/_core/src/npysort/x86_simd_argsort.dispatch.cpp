@@ -1,63 +1,26 @@
 #include "x86_simd_qsort.hpp"
 #ifndef __CYGWIN__
 
-#if defined(NPY_HAVE_AVX512_SKX)
-    #include "x86-simd-sort/src/avx512-64bit-argsort.hpp"
-#endif
+#include "x86-simd-sort/src/x86simdsort-static-incl.h"
+
+#define DISPATCH_ARG_METHODS(TYPE) \
+template<> void NPY_CPU_DISPATCH_CURFX(ArgQSelect)(TYPE* arr, npy_intp* arg, npy_intp num, npy_intp kth) \
+{ \
+    x86simdsortStatic::argselect(arr, reinterpret_cast<size_t*>(arg), kth, num, true); \
+} \
+template<> void NPY_CPU_DISPATCH_CURFX(ArgQSort)(TYPE* arr, npy_intp *arg, npy_intp size) \
+{ \
+    x86simdsortStatic::argsort(arr, reinterpret_cast<size_t*>(arg), size, true); \
+} \
 
 namespace np { namespace qsort_simd {
 
-/* arg methods currently only have AVX-512 versions */
-#if defined(NPY_HAVE_AVX512_SKX)
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSelect)(int32_t *arr, npy_intp* arg, npy_intp num, npy_intp kth)
-{
-    avx512_argselect(arr, reinterpret_cast<size_t*>(arg), kth, num);
-}
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSelect)(uint32_t *arr, npy_intp* arg, npy_intp num, npy_intp kth)
-{
-    avx512_argselect(arr, reinterpret_cast<size_t*>(arg), kth, num);
-}
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSelect)(int64_t*arr, npy_intp* arg, npy_intp num, npy_intp kth)
-{
-    avx512_argselect(arr, reinterpret_cast<size_t*>(arg), kth, num);
-}
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSelect)(uint64_t*arr, npy_intp* arg, npy_intp num, npy_intp kth)
-{
-    avx512_argselect(arr, reinterpret_cast<size_t*>(arg), kth, num);
-}
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSelect)(float *arr, npy_intp* arg, npy_intp num, npy_intp kth)
-{
-    avx512_argselect(arr, reinterpret_cast<size_t*>(arg), kth, num, true);
-}
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSelect)(double *arr, npy_intp* arg, npy_intp num, npy_intp kth)
-{
-    avx512_argselect(arr, reinterpret_cast<size_t*>(arg), kth, num, true);
-}
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSort)(int32_t *arr, npy_intp *arg, npy_intp size)
-{
-    avx512_argsort(arr, reinterpret_cast<size_t*>(arg), size);
-}
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSort)(uint32_t *arr, npy_intp *arg, npy_intp size)
-{
-    avx512_argsort(arr, reinterpret_cast<size_t*>(arg), size);
-}
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSort)(int64_t *arr, npy_intp *arg, npy_intp size)
-{
-    avx512_argsort(arr, reinterpret_cast<size_t*>(arg), size);
-}
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSort)(uint64_t *arr, npy_intp *arg, npy_intp size)
-{
-    avx512_argsort(arr, reinterpret_cast<size_t*>(arg), size);
-}
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSort)(float *arr, npy_intp *arg, npy_intp size)
-{
-    avx512_argsort(arr, reinterpret_cast<size_t*>(arg), size, true);
-}
-template<> void NPY_CPU_DISPATCH_CURFX(ArgQSort)(double *arr, npy_intp *arg, npy_intp size)
-{
-    avx512_argsort(arr, reinterpret_cast<size_t*>(arg), size, true);
-}
-#endif  // NPY_HAVE_AVX512_SKX
+    DISPATCH_ARG_METHODS(uint32_t)
+    DISPATCH_ARG_METHODS(int32_t)
+    DISPATCH_ARG_METHODS(float)
+    DISPATCH_ARG_METHODS(uint64_t)
+    DISPATCH_ARG_METHODS(int64_t)
+    DISPATCH_ARG_METHODS(double)
 
 }} // namespace np::simd
 

@@ -11,10 +11,10 @@ valid_filemodes = ["r", "c", "r+", "w+"]
 writeable_filemodes = ["r+", "w+"]
 
 mode_equivalents = {
-    "readonly":"r",
-    "copyonwrite":"c",
-    "readwrite":"r+",
-    "write":"w+"
+    "readonly": "r",
+    "copyonwrite": "c",
+    "readwrite": "r+",
+    "write": "w+"
     }
 
 
@@ -84,7 +84,7 @@ class memmap(ndarray):
         .. versionchanged:: 2.0
          The shape parameter can now be any integer sequence type, previously
          types were limited to tuple and int.
-    
+
     order : {'C', 'F'}, optional
         Specify the order of the ndarray memory layout:
         :term:`row-major`, C-style or :term:`column-major`,
@@ -127,6 +127,7 @@ class memmap(ndarray):
 
     Examples
     --------
+    >>> import numpy as np
     >>> data = np.arange(12, dtype='float32')
     >>> data.resize((3,4))
 
@@ -232,7 +233,7 @@ class memmap(ndarray):
         else:
             f_ctx = open(
                 os.fspath(filename),
-                ('r' if mode == 'c' else mode)+'b'
+                ('r' if mode == 'c' else mode) + 'b'
             )
 
         with f_ctx as fid:
@@ -259,12 +260,16 @@ class memmap(ndarray):
                 for k in shape:
                     size *= k
 
-            bytes = int(offset + size*_dbytes)
+            bytes = int(offset + size * _dbytes)
 
-            if mode in ('w+', 'r+') and flen < bytes:
-                fid.seek(bytes - 1, 0)
-                fid.write(b'\0')
-                fid.flush()
+            if mode in ('w+', 'r+'):
+                # gh-27723
+                # if bytes == 0, we write out 1 byte to allow empty memmap.
+                bytes = max(bytes, 1)
+                if flen < bytes:
+                    fid.seek(bytes - 1, 0)
+                    fid.write(b'\0')
+                    fid.flush()
 
             if mode == 'c':
                 acc = mmap.ACCESS_COPY
@@ -275,6 +280,11 @@ class memmap(ndarray):
 
             start = offset - offset % mmap.ALLOCATIONGRANULARITY
             bytes -= start
+            # bytes == 0 is problematic as in mmap length=0 maps the full file.
+            # See PR gh-27723 for a more detailed explanation.
+            if bytes == 0 and start > 0:
+                bytes += mmap.ALLOCATIONGRANULARITY
+                start -= mmap.ALLOCATIONGRANULARITY
             array_offset = offset - start
             mm = mmap.mmap(fid.fileno(), bytes, access=acc, offset=start)
 
@@ -327,7 +337,7 @@ class memmap(ndarray):
         if self.base is not None and hasattr(self.base, 'flush'):
             self.base.flush()
 
-    def __array_wrap__(self, arr, context=None):
+    def __array_wrap__(self, arr, context=None, return_scalar=False):
         arr = super().__array_wrap__(arr, context)
 
         # Return a memmap if a memmap was given as the output of the
@@ -335,10 +345,12 @@ class memmap(ndarray):
         # to keep original memmap subclasses behavior
         if self is arr or type(self) is not memmap:
             return arr
+
         # Return scalar instead of 0d memmap, e.g. for np.sum with
-        # axis=None
-        if arr.shape == ():
+        # axis=None (note that subclasses will not reach here)
+        if return_scalar:
             return arr[()]
+
         # Return ndarray otherwise
         return arr.view(np.ndarray)
 

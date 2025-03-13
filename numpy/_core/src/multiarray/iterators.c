@@ -11,13 +11,14 @@
 
 #include "npy_config.h"
 
-#include "npy_pycompat.h"
+
 
 #include "arrayobject.h"
 #include "iterators.h"
 #include "ctors.h"
 #include "common.h"
 #include "conversion_utils.h"
+#include "dtypemeta.h"
 #include "array_coercion.h"
 #include "item_selection.h"
 #include "lowlevel_strided_loops.h"
@@ -135,7 +136,6 @@ PyArray_RawIterBaseInit(PyArrayIterObject *it, PyArrayObject *ao)
     nd = PyArray_NDIM(ao);
     /* The legacy iterator only supports 32 dimensions */
     assert(nd <= NPY_MAXDIMS_LEGACY_ITERS);
-    PyArray_UpdateFlags(ao, NPY_ARRAY_C_CONTIGUOUS);
     if (PyArray_ISCONTIGUOUS(ao)) {
         it->contiguous = 1;
     }
@@ -452,7 +452,7 @@ iter_subscript_Bool(PyArrayIterObject *self, PyArrayObject *ind,
     /* Get size of return array */
     count = count_boolean_trues(PyArray_NDIM(ind), PyArray_DATA(ind),
                                 PyArray_DIMS(ind), PyArray_STRIDES(ind));
-    itemsize = PyArray_DESCR(self->ao)->elsize;
+    itemsize = PyArray_ITEMSIZE(self->ao);
     PyArray_Descr *dtype = PyArray_DESCR(self->ao);
     Py_INCREF(dtype);
     ret = (PyArrayObject *)PyArray_NewFromDescr(Py_TYPE(self->ao),
@@ -694,9 +694,23 @@ iter_subscript(PyArrayIterObject *self, PyObject *ind)
         obj = ind;
     }
 
-    /* Any remaining valid input is an array or has been turned into one */
     if (!PyArray_Check(obj)) {
-        goto fail;
+        PyArrayObject *tmp_arr = (PyArrayObject *) PyArray_FROM_O(obj);
+        if (tmp_arr == NULL) {
+            goto fail;
+        }
+
+        if (PyArray_SIZE(tmp_arr) == 0) {
+            PyArray_Descr *indtype = PyArray_DescrFromType(NPY_INTP);
+            Py_SETREF(obj, PyArray_FromArray(tmp_arr, indtype, NPY_ARRAY_FORCECAST));
+            Py_DECREF(tmp_arr);
+            if (obj == NULL) {
+                goto fail;
+            }
+        }
+        else {
+            Py_SETREF(obj, (PyObject *) tmp_arr);
+        }
     }
 
     /* Check for Boolean array */
@@ -1071,7 +1085,7 @@ static PyMappingMethods iter_as_mapping = {
  *  ignored.
  */
 static PyArrayObject *
-iter_array(PyArrayIterObject *it, PyObject *NPY_UNUSED(op))
+iter_array(PyArrayIterObject *it, PyObject *NPY_UNUSED(args), PyObject *NPY_UNUSED(kwds))
 {
 
     PyArrayObject *ret;
@@ -1120,7 +1134,7 @@ static PyMethodDef iter_methods[] = {
     /* to get array */
     {"__array__",
         (PyCFunction)iter_array,
-        METH_VARARGS, NULL},
+        METH_VARARGS | METH_KEYWORDS, NULL},
     {"copy",
         (PyCFunction)iter_copy,
         METH_VARARGS, NULL},
@@ -1132,7 +1146,7 @@ iter_richcompare(PyArrayIterObject *self, PyObject *other, int cmp_op)
 {
     PyArrayObject *new;
     PyObject *ret;
-    new = (PyArrayObject *)iter_array(self, NULL);
+    new = (PyArrayObject *)iter_array(self, NULL, NULL);
     if (new == NULL) {
         return NULL;
     }
@@ -1638,7 +1652,7 @@ static char* _set_constant(PyArrayNeighborhoodIterObject* iter,
     PyArrayIterObject *ar = iter->_internal_iter;
     int storeflags, st;
 
-    ret = PyDataMem_NEW(PyArray_DESCR(ar->ao)->elsize);
+    ret = PyDataMem_NEW(PyArray_ITEMSIZE(ar->ao));
     if (ret == NULL) {
         PyErr_SetNone(PyExc_MemoryError);
         return NULL;

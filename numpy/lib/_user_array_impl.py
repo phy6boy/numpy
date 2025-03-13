@@ -13,8 +13,10 @@ from numpy._core import (
     bitwise_xor, invert, less, less_equal, not_equal, equal, greater,
     greater_equal, shape, reshape, arange, sin, sqrt, transpose
 )
+from numpy._core.overrides import set_module
 
 
+@set_module("numpy.lib.user_array")
 class container:
     """
     container(data, dtype=None, copy=True)
@@ -24,7 +26,6 @@ class container:
     Methods
     -------
     copy
-    tostring
     byteswap
     astype
 
@@ -224,10 +225,6 @@ class container:
     def copy(self):
         ""
         return self._rc(self.array.copy())
-
-    def tostring(self):
-        ""
-        return self.array.tostring()
 
     def tobytes(self):
         ""

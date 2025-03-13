@@ -31,6 +31,7 @@ aims to allow changes to an extend that *most* downstream packages are expected
 to need no or only minor code changes.
 
 The implementation of this NEP consists would consist of two steps:
+
 1. As part of a general improvement, starting with NumPy 1.25 building with
    NumPy will by default export an older API version to allow backwards
    compatible builds with the newest available NumPy version.
@@ -252,7 +253,7 @@ a user to:
   yet compatible.
 
 The import of ``numpy2_compat`` (and an error when it is missing) will be
-inserted by the NumPy eaders as part of the ``import_array()`` call.
+inserted by the NumPy headers as part of the ``import_array()`` call.
 
 Alternatives
 ============

@@ -42,6 +42,10 @@ enter in a script or at a Python prompt. Everything else is **output**, the
 results of running your code. Note that ``>>>`` and ``...`` are not part of the
 code and may cause an error if entered at a Python prompt.
 
+To run the code in the examples, you can copy and paste it into a Python script or
+REPL, or use the experimental interactive examples in the browser provided in various
+locations in the documentation.
+
 Why use NumPy?
 --------------
 
@@ -97,7 +101,7 @@ array".
 Most NumPy arrays have some restrictions. For instance:
 
 - All elements of the array must be of the same type of data.
-- Once created, the total size of the the array can't change.
+- Once created, the total size of the array can't change.
 - The shape must be "rectangular", not "jagged"; e.g., each row of
   a two-dimensional array must have the same number of columns.
 
@@ -235,7 +239,7 @@ only one "data type". The data type is recorded in the ``dtype`` attribute.
     >>> a.dtype
     dtype('int64')  # "int" for integer, "64" for 64-bit
 
-ref:`Read more about array attributes here <arrays.ndarray>` and learn about
+:ref:`Read more about array attributes here <arrays.ndarray>` and learn about
 :ref:`array objects here <arrays>`.
 
 How to create a basic array
@@ -301,7 +305,7 @@ Adding, removing, and sorting elements
 
 -----
 
-Sorting an element is simple with ``np.sort()``. You can specify the axis, kind,
+Sorting an array is simple with ``np.sort()``. You can specify the axis, kind,
 and order when you call the function.
 
 If you start with this array::
@@ -425,12 +429,12 @@ this array to an array with three rows and two columns::
 
 With ``np.reshape``, you can specify a few optional parameters::
 
-  >>> np.reshape(a, newshape=(1, 6), order='C')
+  >>> np.reshape(a, shape=(1, 6), order='C')
   array([[0, 1, 2, 3, 4, 5]])
 
 ``a`` is the array to be reshaped.
 
-``newshape`` is the new shape you want. You can specify an integer or a tuple of
+``shape`` is the new shape you want. You can specify an integer or a tuple of
 integers. If you specify an integer, the result will be an array of that length.
 The shape should be compatible with the original shape.
 
@@ -664,7 +668,10 @@ where you want to slice your array. ::
   array([4, 5, 6, 7, 8])
 
 Here, you grabbed a section of your array from index position 3 through index
-position 8.
+position 8 but not including position 8 itself.
+
+*Reminder: Array indexes begin at 0. This means the first element of the array is at index 0,
+the second element is at index 1, and so on.*
 
 You can also stack two existing arrays, both vertically and horizontally. Let's
 say you have two arrays, ``a1`` and ``a2``::
@@ -1525,7 +1532,7 @@ If you want to store a single ndarray object, store it as a .npy file using
 save it as a .npz file using ``np.savez``. You can also save several arrays
 into a single file in compressed npz format with `savez_compressed`.
 
-It's easy to save and load and array with ``np.save()``. Just make sure to
+It's easy to save and load an array with ``np.save()``. Just make sure to
 specify the array you want to save and a file name. For example, if you create
 this array::
 

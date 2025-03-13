@@ -10,9 +10,9 @@ from numpy._typing import (
     _ArrayLike
 )
 
-_SCT = TypeVar("_SCT", bound=generic)
+__all__ = ["broadcast_to", "broadcast_arrays", "broadcast_shapes"]
 
-__all__: list[str]
+_SCT = TypeVar("_SCT", bound=generic)
 
 class DummyArray:
     __array_interface__: dict[str, Any]
@@ -77,4 +77,4 @@ def broadcast_shapes(*args: _ShapeLike) -> _Shape: ...
 def broadcast_arrays(
     *args: ArrayLike,
     subok: bool = ...,
-) -> list[NDArray[Any]]: ...
+) -> tuple[NDArray[Any], ...]: ...

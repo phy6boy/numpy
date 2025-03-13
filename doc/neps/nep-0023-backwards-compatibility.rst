@@ -5,7 +5,7 @@ NEP 23 — Backwards compatibility and deprecation policy
 =======================================================
 
 :Author: Ralf Gommers <ralf.gommers@gmail.com>
-:Status: Final
+:Status: Active
 :Type: Process
 :Created: 2018-07-14
 :Resolution: https://mail.python.org/pipermail/numpy-discussion/2021-January/081423.html
@@ -224,8 +224,7 @@ Functionality with more strict deprecation policies
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
 - ``numpy.random`` has its own backwards compatibility policy with additional
-  requirements on top of the ones in this NEP, see
-  `NEP 19 <http://www.numpy.org/neps/nep-0019-rng-policy.html>`_.
+  requirements on top of the ones in this NEP, see :doc:`nep-0019-rng-policy`.
 - The file format of ``.npy`` and ``.npz`` files is strictly versioned
   independent of the NumPy version; existing format versions must remain
   backwards compatible even if a newer format version is introduced.

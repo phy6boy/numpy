@@ -126,6 +126,7 @@ def poly2lag(pol):
 
     Examples
     --------
+    >>> import numpy as np
     >>> from numpy.polynomial.laguerre import poly2lag
     >>> poly2lag(np.arange(4))
     array([ 23., -63.,  58., -18.])
@@ -188,9 +189,10 @@ def lag2poly(c):
         # i is the current degree of c1
         for i in range(n - 1, 1, -1):
             tmp = c0
-            c0 = polysub(c[i - 2], (c1*(i - 1))/i)
-            c1 = polyadd(tmp, polysub((2*i - 1)*c1, polymulx(c1))/i)
+            c0 = polysub(c[i - 2], (c1 * (i - 1)) / i)
+            c1 = polyadd(tmp, polysub((2 * i - 1) * c1, polymulx(c1)) / i)
         return polyadd(c0, polysub(c1, polymulx(c1)))
+
 
 #
 # These are constant arrays are of integer type so as to be compatible
@@ -198,7 +200,7 @@ def lag2poly(c):
 #
 
 # Laguerre
-lagdomain = np.array([0, 1])
+lagdomain = np.array([0., 1.])
 
 # Laguerre coefficients representing zero.
 lagzero = np.array([0])
@@ -432,9 +434,9 @@ def lagmulx(c):
     prd[0] = c[0]
     prd[1] = -c[0]
     for i in range(1, len(c)):
-        prd[i + 1] = -c[i]*(i + 1)
-        prd[i] += c[i]*(2*i + 1)
-        prd[i - 1] -= c[i]*i
+        prd[i + 1] = -c[i] * (i + 1)
+        prd[i] += c[i] * (2 * i + 1)
+        prd[i - 1] -= c[i] * i
     return prd
 
 
@@ -487,20 +489,20 @@ def lagmul(c1, c2):
         xs = c2
 
     if len(c) == 1:
-        c0 = c[0]*xs
+        c0 = c[0] * xs
         c1 = 0
     elif len(c) == 2:
-        c0 = c[0]*xs
-        c1 = c[1]*xs
+        c0 = c[0] * xs
+        c1 = c[1] * xs
     else:
         nd = len(c)
-        c0 = c[-2]*xs
-        c1 = c[-1]*xs
+        c0 = c[-2] * xs
+        c1 = c[-1] * xs
         for i in range(3, len(c) + 1):
             tmp = c0
             nd = nd - 1
-            c0 = lagsub(c[-i]*xs, (c1*(nd - 1))/nd)
-            c1 = lagadd(tmp, lagsub((2*nd - 1)*c1, lagmulx(c1))/nd)
+            c0 = lagsub(c[-i] * xs, (c1 * (nd - 1)) / nd)
+            c1 = lagadd(tmp, lagsub((2 * nd - 1) * c1, lagmulx(c1)) / nd)
     return lagadd(c0, lagsub(c1, lagmulx(c1)))
 
 
@@ -615,8 +617,6 @@ def lagder(c, m=1, scl=1, axis=0):
     axis : int, optional
         Axis over which the derivative is taken. (Default: 0).
 
-        .. versionadded:: 1.7.0
-
     Returns
     -------
     der : ndarray
@@ -658,7 +658,7 @@ def lagder(c, m=1, scl=1, axis=0):
     c = np.moveaxis(c, iaxis, 0)
     n = len(c)
     if cnt >= n:
-        c = c[:1]*0
+        c = c[:1] * 0
     else:
         for i in range(cnt):
             n = n - 1
@@ -711,8 +711,6 @@ def lagint(c, m=1, k=[], lbnd=0, scl=1, axis=0):
         before the integration constant is added. (Default: 1)
     axis : int, optional
         Axis over which the integral is taken. (Default: 0).
-
-        .. versionadded:: 1.7.0
 
     Returns
     -------
@@ -778,7 +776,7 @@ def lagint(c, m=1, k=[], lbnd=0, scl=1, axis=0):
         return c
 
     c = np.moveaxis(c, iaxis, 0)
-    k = list(k) + [0]*(cnt - len(k))
+    k = list(k) + [0] * (cnt - len(k))
     for i in range(cnt):
         n = len(c)
         c *= scl
@@ -801,7 +799,7 @@ def lagval(x, c, tensor=True):
     """
     Evaluate a Laguerre series at points x.
 
-    If `c` is of length `n + 1`, this function returns the value:
+    If `c` is of length ``n + 1``, this function returns the value:
 
     .. math:: p(x) = c_0 * L_0(x) + c_1 * L_1(x) + ... + c_n * L_n(x)
 
@@ -810,7 +808,7 @@ def lagval(x, c, tensor=True):
     or its elements must support multiplication and addition both with
     themselves and with the elements of `c`.
 
-    If `c` is a 1-D array, then `p(x)` will have the same shape as `x`.  If
+    If `c` is a 1-D array, then ``p(x)`` will have the same shape as `x`.  If
     `c` is multidimensional, then the shape of the result depends on the
     value of `tensor`. If `tensor` is true the shape will be c.shape[1:] +
     x.shape. If `tensor` is false the shape will be c.shape[1:]. Note that
@@ -840,8 +838,6 @@ def lagval(x, c, tensor=True):
         over the columns of `c` for the evaluation.  This keyword is useful
         when `c` is multidimensional. The default value is True.
 
-        .. versionadded:: 1.7.0
-
     Returns
     -------
     values : ndarray, algebra_like
@@ -866,13 +862,13 @@ def lagval(x, c, tensor=True):
            [-4.5, -2. ]])
 
     """
-    c = np.array(c, ndmin=1, copy=False)
+    c = np.array(c, ndmin=1, copy=None)
     if c.dtype.char in '?bBhHiIlLqQpP':
         c = c.astype(np.double)
     if isinstance(x, (tuple, list)):
         x = np.asarray(x)
     if isinstance(x, np.ndarray) and tensor:
-        c = c.reshape(c.shape + (1,)*x.ndim)
+        c = c.reshape(c.shape + (1,) * x.ndim)
 
     if len(c) == 1:
         c0 = c[0]
@@ -887,9 +883,9 @@ def lagval(x, c, tensor=True):
         for i in range(3, len(c) + 1):
             tmp = c0
             nd = nd - 1
-            c0 = c[-i] - (c1*(nd - 1))/nd
-            c1 = tmp + (c1*((2*nd - 1) - x))/nd
-    return c0 + c1*(1 - x)
+            c0 = c[-i] - (c1 * (nd - 1)) / nd
+            c1 = tmp + (c1 * ((2 * nd - 1) - x)) / nd
+    return c0 + c1 * (1 - x)
 
 
 def lagval2d(x, y, c):
@@ -912,7 +908,7 @@ def lagval2d(x, y, c):
     Parameters
     ----------
     x, y : array_like, compatible objects
-        The two dimensional series is evaluated at the points `(x, y)`,
+        The two dimensional series is evaluated at the points ``(x, y)``,
         where `x` and `y` must have the same shape. If `x` or `y` is a list
         or tuple, it is first converted to an ndarray, otherwise it is left
         unchanged and if it isn't an ndarray it is treated as a scalar.
@@ -932,11 +928,6 @@ def lagval2d(x, y, c):
     --------
     lagval, laggrid2d, lagval3d, laggrid3d
 
-    Notes
-    -----
-
-    .. versionadded:: 1.7.0
-
     Examples
     --------
     >>> from numpy.polynomial.laguerre import lagval2d
@@ -955,7 +946,7 @@ def laggrid2d(x, y, c):
 
     .. math:: p(a,b) = \\sum_{i,j} c_{i,j} * L_i(a) * L_j(b)
 
-    where the points `(a, b)` consist of all pairs formed by taking
+    where the points ``(a, b)`` consist of all pairs formed by taking
     `a` from `x` and `b` from `y`. The resulting points form a grid with
     `x` in the first dimension and `y` in the second.
 
@@ -977,7 +968,7 @@ def laggrid2d(x, y, c):
         unchanged and, if it isn't an ndarray, it is treated as a scalar.
     c : array_like
         Array of coefficients ordered so that the coefficient of the term of
-        multi-degree i,j is contained in `c[i,j]`. If `c` has dimension
+        multi-degree i,j is contained in ``c[i,j]``. If `c` has dimension
         greater than two the remaining indices enumerate multiple sets of
         coefficients.
 
@@ -990,11 +981,6 @@ def laggrid2d(x, y, c):
     See Also
     --------
     lagval, lagval2d, lagval3d, laggrid3d
-
-    Notes
-    -----
-
-    .. versionadded:: 1.7.0
 
     Examples
     --------
@@ -1030,7 +1016,7 @@ def lagval3d(x, y, z, c):
     ----------
     x, y, z : array_like, compatible object
         The three dimensional series is evaluated at the points
-        `(x, y, z)`, where `x`, `y`, and `z` must have the same shape.  If
+        ``(x, y, z)``, where `x`, `y`, and `z` must have the same shape.  If
         any of `x`, `y`, or `z` is a list or tuple, it is first converted
         to an ndarray, otherwise it is left unchanged and if it isn't an
         ndarray it is  treated as a scalar.
@@ -1050,18 +1036,13 @@ def lagval3d(x, y, z, c):
     --------
     lagval, lagval2d, laggrid2d, laggrid3d
 
-    Notes
-    -----
-
-    .. versionadded:: 1.7.0
-
     Examples
     --------
     >>> from numpy.polynomial.laguerre import lagval3d
     >>> c = [[[1, 2], [3, 4]], [[5, 6], [7, 8]]]
     >>> lagval3d(1, 1, 2, c)
     -1.0
-    
+
     """
     return pu._valnd(lagval, c, x, y, z)
 
@@ -1074,7 +1055,7 @@ def laggrid3d(x, y, z, c):
 
     .. math:: p(a,b,c) = \\sum_{i,j,k} c_{i,j,k} * L_i(a) * L_j(b) * L_k(c)
 
-    where the points `(a, b, c)` consist of all triples formed by taking
+    where the points ``(a, b, c)`` consist of all triples formed by taking
     `a` from `x`, `b` from `y`, and `c` from `z`. The resulting points form
     a grid with `x` in the first dimension, `y` in the second, and `z` in
     the third.
@@ -1113,11 +1094,6 @@ def laggrid3d(x, y, z, c):
     --------
     lagval, lagval2d, laggrid2d, lagval3d
 
-    Notes
-    -----
-
-    .. versionadded:: 1.7.0
-
     Examples
     --------
     >>> from numpy.polynomial.laguerre import laggrid3d
@@ -1127,7 +1103,7 @@ def laggrid3d(x, y, z, c):
             [ -2., -18.]],
            [[ -2., -14.],
             [ -1.,  -5.]]])
-    
+
     """
     return pu._gridnd(lagval, c, x, y, z)
 
@@ -1140,10 +1116,10 @@ def lagvander(x, deg):
 
     .. math:: V[..., i] = L_i(x)
 
-    where `0 <= i <= deg`. The leading indices of `V` index the elements of
+    where ``0 <= i <= deg``. The leading indices of `V` index the elements of
     `x` and the last index is the degree of the Laguerre polynomial.
 
-    If `c` is a 1-D array of coefficients of length `n + 1` and `V` is the
+    If `c` is a 1-D array of coefficients of length ``n + 1`` and `V` is the
     array ``V = lagvander(x, n)``, then ``np.dot(V, c)`` and
     ``lagval(x, c)`` are the same up to roundoff. This equivalence is
     useful both for least squares fitting and for the evaluation of a large
@@ -1168,6 +1144,7 @@ def lagvander(x, deg):
 
     Examples
     --------
+    >>> import numpy as np
     >>> from numpy.polynomial.laguerre import lagvander
     >>> x = np.array([0, 1, 2])
     >>> lagvander(x, 3)
@@ -1180,15 +1157,15 @@ def lagvander(x, deg):
     if ideg < 0:
         raise ValueError("deg must be non-negative")
 
-    x = np.array(x, copy=False, ndmin=1) + 0.0
+    x = np.array(x, copy=None, ndmin=1) + 0.0
     dims = (ideg + 1,) + x.shape
     dtyp = x.dtype
     v = np.empty(dims, dtype=dtyp)
-    v[0] = x*0 + 1
+    v[0] = x * 0 + 1
     if ideg > 0:
         v[1] = 1 - x
         for i in range(2, ideg + 1):
-            v[i] = (v[i-1]*(2*i - 1 - x) - v[i-2]*(i - 1))/i
+            v[i] = (v[i - 1] * (2 * i - 1 - x) - v[i - 2] * (i - 1)) / i
     return np.moveaxis(v, 0, -1)
 
 
@@ -1196,12 +1173,12 @@ def lagvander2d(x, y, deg):
     """Pseudo-Vandermonde matrix of given degrees.
 
     Returns the pseudo-Vandermonde matrix of degrees `deg` and sample
-    points `(x, y)`. The pseudo-Vandermonde matrix is defined by
+    points ``(x, y)``. The pseudo-Vandermonde matrix is defined by
 
     .. math:: V[..., (deg[1] + 1)*i + j] = L_i(x) * L_j(y),
 
-    where `0 <= i <= deg[0]` and `0 <= j <= deg[1]`. The leading indices of
-    `V` index the points `(x, y)` and the last index encodes the degrees of
+    where ``0 <= i <= deg[0]`` and ``0 <= j <= deg[1]``. The leading indices of
+    `V` index the points ``(x, y)`` and the last index encodes the degrees of
     the Laguerre polynomials.
 
     If ``V = lagvander2d(x, y, [xdeg, ydeg])``, then the columns of `V`
@@ -1236,19 +1213,15 @@ def lagvander2d(x, y, deg):
     --------
     lagvander, lagvander3d, lagval2d, lagval3d
 
-    Notes
-    -----
-
-    .. versionadded:: 1.7.0
-
     Examples
     --------
+    >>> import numpy as np
     >>> from numpy.polynomial.laguerre import lagvander2d
     >>> x = np.array([0])
     >>> y = np.array([2])
     >>> lagvander2d(x, y, [2, 1])
     array([[ 1., -1.,  1., -1.,  1., -1.]])
-    
+
     """
     return pu._vander_nd_flat((lagvander, lagvander), (x, y), deg)
 
@@ -1257,13 +1230,13 @@ def lagvander3d(x, y, z, deg):
     """Pseudo-Vandermonde matrix of given degrees.
 
     Returns the pseudo-Vandermonde matrix of degrees `deg` and sample
-    points `(x, y, z)`. If `l, m, n` are the given degrees in `x, y, z`,
+    points ``(x, y, z)``. If `l`, `m`, `n` are the given degrees in `x`, `y`, `z`,
     then The pseudo-Vandermonde matrix is defined by
 
     .. math:: V[..., (m+1)(n+1)i + (n+1)j + k] = L_i(x)*L_j(y)*L_k(z),
 
-    where `0 <= i <= l`, `0 <= j <= m`, and `0 <= j <= n`.  The leading
-    indices of `V` index the points `(x, y, z)` and the last index encodes
+    where ``0 <= i <= l``, ``0 <= j <= m``, and ``0 <= j <= n``.  The leading
+    indices of `V` index the points ``(x, y, z)`` and the last index encodes
     the degrees of the Laguerre polynomials.
 
     If ``V = lagvander3d(x, y, z, [xdeg, ydeg, zdeg])``, then the columns
@@ -1298,13 +1271,9 @@ def lagvander3d(x, y, z, deg):
     --------
     lagvander, lagvander3d, lagval2d, lagval3d
 
-    Notes
-    -----
-
-    .. versionadded:: 1.7.0
-
     Examples
     --------
+    >>> import numpy as np
     >>> from numpy.polynomial.laguerre import lagvander3d
     >>> x = np.array([0])
     >>> y = np.array([2])
@@ -1419,8 +1388,8 @@ def lagfit(x, y, deg, rcond=None, full=False, w=None):
     decomposition of ``V``.
 
     If some of the singular values of `V` are so small that they are
-    neglected, then a `RankWarning` will be issued. This means that the
-    coefficient values may be poorly determined. Using a lower order fit
+    neglected, then a `~exceptions.RankWarning` will be issued. This means that
+    the coefficient values may be poorly determined. Using a lower order fit
     will usually get rid of the warning.  The `rcond` parameter can also be
     set to a value smaller than its default, but the resulting fit may be
     spurious and have large contributions from roundoff error.
@@ -1438,12 +1407,14 @@ def lagfit(x, y, deg, rcond=None, full=False, w=None):
 
     Examples
     --------
+    >>> import numpy as np
     >>> from numpy.polynomial.laguerre import lagfit, lagval
     >>> x = np.linspace(0, 10)
-    >>> err = np.random.randn(len(x))/10
+    >>> rng = np.random.default_rng()
+    >>> err = rng.normal(scale=1./10, size=len(x))
     >>> y = lagval(x, [1, 2, 3]) + err
     >>> lagfit(x, y, 2)
-    array([ 0.96971004,  2.00193749,  3.00288744]) # may vary
+    array([1.00578369, 1.99417356, 2.99827656]) # may vary
 
     """
     return pu._fit(lagvander, x, y, deg, rcond, full, w)
@@ -1468,35 +1439,30 @@ def lagcompanion(c):
     mat : ndarray
         Companion matrix of dimensions (deg, deg).
 
-    Notes
-    -----
-
-    .. versionadded:: 1.7.0
-
     Examples
     --------
     >>> from numpy.polynomial.laguerre import lagcompanion
     >>> lagcompanion([1, 2, 3])
     array([[ 1.        , -0.33333333],
            [-1.        ,  4.33333333]])
-           
+
     """
     # c is a trimmed copy
     [c] = pu.as_series([c])
     if len(c) < 2:
         raise ValueError('Series must have maximum degree of at least 1.')
     if len(c) == 2:
-        return np.array([[1 + c[0]/c[1]]])
+        return np.array([[1 + c[0] / c[1]]])
 
     n = len(c) - 1
     mat = np.zeros((n, n), dtype=c.dtype)
-    top = mat.reshape(-1)[1::n+1]
-    mid = mat.reshape(-1)[0::n+1]
-    bot = mat.reshape(-1)[n::n+1]
+    top = mat.reshape(-1)[1::n + 1]
+    mid = mat.reshape(-1)[0::n + 1]
+    bot = mat.reshape(-1)[n::n + 1]
     top[...] = -np.arange(1, n)
-    mid[...] = 2.*np.arange(n) + 1.
+    mid[...] = 2. * np.arange(n) + 1.
     bot[...] = top
-    mat[:, -1] += (c[:-1]/c[-1])*n
+    mat[:, -1] += (c[:-1] / c[-1]) * n
     return mat
 
 
@@ -1555,10 +1521,10 @@ def lagroots(c):
     if len(c) <= 1:
         return np.array([], dtype=c.dtype)
     if len(c) == 2:
-        return np.array([1 + c[0]/c[1]])
+        return np.array([1 + c[0] / c[1]])
 
     # rotated companion matrix reduces error
-    m = lagcompanion(c)[::-1,::-1]
+    m = lagcompanion(c)[::-1, ::-1]
     r = la.eigvals(m)
     r.sort()
     return r
@@ -1587,9 +1553,6 @@ def laggauss(deg):
 
     Notes
     -----
-
-    .. versionadded:: 1.7.0
-
     The results have only been tested up to degree 100 higher degrees may
     be problematic. The weights are determined by using the fact that
 
@@ -1612,21 +1575,21 @@ def laggauss(deg):
 
     # first approximation of roots. We use the fact that the companion
     # matrix is symmetric in this case in order to obtain better zeros.
-    c = np.array([0]*deg + [1])
+    c = np.array([0] * deg + [1])
     m = lagcompanion(c)
     x = la.eigvalsh(m)
 
     # improve roots by one application of Newton
     dy = lagval(x, c)
     df = lagval(x, lagder(c))
-    x -= dy/df
+    x -= dy / df
 
     # compute the weights. We scale the factor to avoid possible numerical
     # overflow.
     fm = lagval(x, c[1:])
     fm /= np.abs(fm).max()
     df /= np.abs(df).max()
-    w = 1/(fm * df)
+    w = 1 / (fm * df)
 
     # scale w to get the right value, 1 in this case
     w /= w.sum()
@@ -1650,11 +1613,6 @@ def lagweight(x):
     -------
     w : ndarray
        The weight function at `x`.
-
-    Notes
-    -----
-
-    .. versionadded:: 1.7.0
 
     Examples
     --------
@@ -1686,11 +1644,9 @@ class Laguerre(ABCPolyBase):
     domain : (2,) array_like, optional
         Domain to use. The interval ``[domain[0], domain[1]]`` is mapped
         to the interval ``[window[0], window[1]]`` by shifting and scaling.
-        The default value is [0, 1].
+        The default value is [0., 1.].
     window : (2,) array_like, optional
-        Window, see `domain` for its use. The default value is [0, 1].
-
-        .. versionadded:: 1.6.0
+        Window, see `domain` for its use. The default value is [0., 1.].
     symbol : str, optional
         Symbol used to represent the independent variable in string
         representations of the polynomial expression, e.g. for printing.

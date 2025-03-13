@@ -14,7 +14,8 @@ from numpy.testing import (
         assert_, assert_equal, IS_PYPY, assert_almost_equal,
         assert_array_equal, assert_array_almost_equal, assert_raises,
         assert_raises_regex, assert_warns, suppress_warnings,
-        _assert_valid_refcount, HAS_REFCOUNT, IS_PYSTON, IS_WASM
+        _assert_valid_refcount, HAS_REFCOUNT, IS_PYSTON, IS_WASM,
+        IS_64BIT,
         )
 from numpy.testing._private.utils import _no_tracing, requires_memory
 from numpy._utils import asbytes, asunicode
@@ -119,8 +120,8 @@ class TestRegression:
 
     def test_round(self):
         # Ticket #67
-        x = np.array([1+2j])
-        assert_almost_equal(x**(-1), [1/(1+2j)])
+        x = np.array([1 + 2j])
+        assert_almost_equal(x**(-1), [1 / (1 + 2j)])
 
     def test_scalar_compare(self):
         # Trac Ticket #72
@@ -137,7 +138,7 @@ class TestRegression:
         # Ticket #79
         ulen = 1
         ucs_value = '\U0010FFFF'
-        ua = np.array([[[ucs_value*ulen]*2]*3]*4, dtype='U%s' % ulen)
+        ua = np.array([[[ucs_value * ulen] * 2] * 3] * 4, dtype='U%s' % ulen)
         ua.view(ua.dtype.newbyteorder())  # Should succeed.
 
     def test_object_array_fill(self):
@@ -148,7 +149,7 @@ class TestRegression:
     def test_mem_dtype_align(self):
         # Ticket #93
         assert_raises(TypeError, np.dtype,
-                              {'names':['a'], 'formats':['foo']}, align=1)
+                              {'names': ['a'], 'formats': ['foo']}, align=1)
 
     def test_endian_bool_indexing(self):
         # Ticket #105
@@ -170,7 +171,7 @@ class TestRegression:
         net[2] = 0.605202
         max_net = net.max()
         test = np.where(net <= 0., max_net, net)
-        correct = np.array([ 0.60520202,  0.00458849,  0.60520202])
+        correct = np.array([0.60520202,  0.00458849,  0.60520202])
         assert_array_almost_equal(test, correct)
 
     def test_endian_recarray(self):
@@ -290,7 +291,7 @@ class TestRegression:
         x = np.rec.array([(1, 1.1, '1.0'),
                          (2, 2.2, '2.0')], dtype=descr)
         x[0].tolist()
-        [i for i in x[0]]
+        list(x[0])
 
     def test_unicode_string_comparison(self):
         # Ticket #190
@@ -397,7 +398,7 @@ class TestRegression:
         x = np.zeros((1,))
         y = [0]
         decimal = 6
-        np.around(abs(x-y), decimal) <= 10.0**(-decimal)
+        np.around(abs(x - y), decimal) <= 10.0**(-decimal)
 
     def test_character_array_strip(self):
         # Ticket #246
@@ -424,10 +425,10 @@ class TestRegression:
     def test_lexsort_zerolen_custom_strides(self):
         # Ticket #14228
         xs = np.array([], dtype='i8')
-        assert np.lexsort((xs,)).shape[0] == 0 # Works
+        assert np.lexsort((xs,)).shape[0] == 0  # Works
 
         xs.strides = (16,)
-        assert np.lexsort((xs,)).shape[0] == 0 # Was: MemoryError
+        assert np.lexsort((xs,)).shape[0] == 0  # Was: MemoryError
 
     def test_lexsort_zerolen_custom_strides_2d(self):
         xs = np.array([], dtype='i8')
@@ -530,7 +531,7 @@ class TestRegression:
             if res1.dtype.kind in 'uib':
                 assert_((res1 == res2).all(), func)
             else:
-                assert_(abs(res1-res2).max() < 1e-8, func)
+                assert_(abs(res1 - res2).max() < 1e-8, func)
 
         for func in funcs2:
             arr1 = np.random.rand(8, 7)
@@ -540,11 +541,11 @@ class TestRegression:
                 arr1 = arr1.ravel()
                 res1 = getattr(arr2, func)(arr1)
             else:
-                arr2 = (15*arr2).astype(int).ravel()
+                arr2 = (15 * arr2).astype(int).ravel()
             if res1 is None:
                 res1 = getattr(arr1, func)(arr2)
             res2 = getattr(np, func)(arr1, arr2)
-            assert_(abs(res1-res2).max() < 1e-8, func)
+            assert_(abs(res1 - res2).max() < 1e-8, func)
 
     def test_mem_lexsort_strings(self):
         # Ticket #298
@@ -766,12 +767,12 @@ class TestRegression:
 
     def test_arr_transpose(self):
         # Ticket #516
-        x = np.random.rand(*(2,)*16)
+        x = np.random.rand(*(2,) * 16)
         x.transpose(list(range(16)))  # Should succeed
 
     def test_string_mergesort(self):
         # Ticket #540
-        x = np.array(['a']*32)
+        x = np.array(['a'] * 32)
         assert_array_equal(x.argsort(kind='m'), np.arange(32))
 
     def test_argmax_byteorder(self):
@@ -987,7 +988,7 @@ class TestRegression:
         assert_(cnt(b) == cnt0_b + 5 + 5)
 
         tmp = arr1.repeat(3, axis=0)
-        assert_(cnt(a) == cnt0_a + 5 + 3*5)
+        assert_(cnt(a) == cnt0_a + 5 + 3 * 5)
 
         tmp = arr1.take([1, 2, 3], axis=0)
         assert_(cnt(a) == cnt0_a + 5 + 3)
@@ -1028,12 +1029,12 @@ class TestRegression:
     def test_mem_fromiter_invalid_dtype_string(self):
         x = [1, 2, 3]
         assert_raises(ValueError,
-                              np.fromiter, [xi for xi in x], dtype='S')
+                              np.fromiter, list(x), dtype='S')
 
     def test_reduce_big_object_array(self):
         # Ticket #713
-        oldsize = np.setbufsize(10*16)
-        a = np.array([None]*161, object)
+        oldsize = np.setbufsize(10 * 16)
+        a = np.array([None] * 161, object)
         assert_(not np.any(a))
         np.setbufsize(oldsize)
 
@@ -1071,8 +1072,8 @@ class TestRegression:
         with open(filename, 'rb') as f:
             xp = pickle.load(f, encoding='latin1')
         xpd = xp.astype(np.float64)
-        assert_((xp.__array_interface__['data'][0] !=
-                xpd.__array_interface__['data'][0]))
+        assert_(xp.__array_interface__['data'][0] !=
+                xpd.__array_interface__['data'][0])
 
     def test_compress_small_type(self):
         # Ticket #789, changeset 5217.
@@ -1165,8 +1166,8 @@ class TestRegression:
         buf = np.zeros(40, dtype=np.int8)
         a = np.recarray(2, formats="i4,f8,f8", names="id,x,y", buf=buf)
         b = a.tolist()
-        assert_( a[0].tolist() == b[0])
-        assert_( a[1].tolist() == b[1])
+        assert_(a[0].tolist() == b[0])
+        assert_(a[1].tolist() == b[1])
 
     def test_nonscalar_item_method(self):
         # Make sure that .item() fails graciously when it should
@@ -1189,9 +1190,10 @@ class TestRegression:
     def test_sign_for_complex_nan(self):
         # Ticket 794.
         with np.errstate(invalid='ignore'):
-            C = np.array([-np.inf, -2+1j, 0, 2-1j, np.inf, np.nan])
+            C = np.array([-np.inf, -3 + 4j, 0, 4 - 3j, np.inf, np.nan])
             have = np.sign(C)
-            want = np.array([-1+0j, -1+0j, 0+0j, 1+0j, 1+0j, np.nan])
+            want = np.array([-1 + 0j, -0.6 + 0.8j, 0 + 0j, 0.8 - 0.6j, 1 + 0j,
+                             complex(np.nan, np.nan)])
             assert_equal(have, want)
 
     def test_for_equal_names(self):
@@ -1336,8 +1338,8 @@ class TestRegression:
 
     def test_array_too_big(self):
         # Ticket #1080.
-        assert_raises(ValueError, np.zeros, [975]*7, np.int8)
-        assert_raises(ValueError, np.zeros, [26244]*5, np.int8)
+        assert_raises(ValueError, np.zeros, [975] * 7, np.int8)
+        assert_raises(ValueError, np.zeros, [26244] * 5, np.int8)
 
     def test_dtype_keyerrors_(self):
         # Ticket #1106.
@@ -1423,8 +1425,8 @@ class TestRegression:
 
     def test_byteswap_complex_scalar(self):
         # Ticket #1259 and gh-441
-        for dtype in [np.dtype('<'+t) for t in np.typecodes['Complex']]:
-            z = np.array([2.2-1.1j], dtype)
+        for dtype in [np.dtype('<' + t) for t in np.typecodes['Complex']]:
+            z = np.array([2.2 - 1.1j], dtype)
             x = z[0]  # always native-endian
             y = x.byteswap()
             if x.dtype.byteorder == z.dtype.byteorder:
@@ -1481,7 +1483,7 @@ class TestRegression:
 
         x = np.array([1, 2, 3], dtype=np.dtype('<i4'))
         assert_equal(
-            sha256(x).hexdigest(), 
+            sha256(x).hexdigest(),
             '4636993d3e1da4e9d6b8f87b79e8f7c6d018580d52661950eabc3845c5897a4d'
         )
 
@@ -1500,8 +1502,7 @@ class TestRegression:
         assert_(np.all(b == np.array([0, 1, 2, 3, 4, 5, 6, 7, 8, 9])))
 
     def test_fromstring_crash(self):
-        # Ticket #1345: the following should not cause a crash
-        with assert_warns(DeprecationWarning):
+        with assert_raises(ValueError):
             np.fromstring(b'aa, aa, 1.0', sep=',')
 
     def test_ticket_1539(self):
@@ -1527,7 +1528,7 @@ class TestRegression:
 
     def test_ticket_1538(self):
         x = np.finfo(np.float32)
-        for name in 'eps epsneg max min resolution tiny'.split():
+        for name in ('eps', 'epsneg', 'max', 'min', 'resolution', 'tiny'):
             assert_equal(type(getattr(x, name)), np.float32,
                          err_msg=name)
 
@@ -1610,7 +1611,7 @@ class TestRegression:
 
     def test_complex_scalar_warning(self):
         for tp in [np.csingle, np.cdouble, np.clongdouble]:
-            x = tp(1+2j)
+            x = tp(1 + 2j)
             assert_warns(ComplexWarning, float, x)
             with suppress_warnings() as sup:
                 sup.filter(ComplexWarning)
@@ -1618,13 +1619,13 @@ class TestRegression:
 
     def test_complex_scalar_complex_cast(self):
         for tp in [np.csingle, np.cdouble, np.clongdouble]:
-            x = tp(1+2j)
-            assert_equal(complex(x), 1+2j)
+            x = tp(1 + 2j)
+            assert_equal(complex(x), 1 + 2j)
 
     def test_complex_boolean_cast(self):
         # Ticket #2218
         for tp in [np.csingle, np.cdouble, np.clongdouble]:
-            x = np.array([0, 0+0.5j, 0.5+0j], dtype=tp)
+            x = np.array([0, 0 + 0.5j, 0.5 + 0j], dtype=tp)
             assert_equal(x.astype(bool), np.array([0, 1, 1], dtype=bool))
             assert_(np.any(x))
             assert_(np.all(x[1:]))
@@ -1634,7 +1635,7 @@ class TestRegression:
         assert_equal(int(np.uint64(x)), x)
 
     def test_duplicate_field_names_assign(self):
-        ra = np.fromiter(((i*3, i*2) for i in range(10)), dtype='i8,f8')
+        ra = np.fromiter(((i * 3, i * 2) for i in range(10)), dtype='i8,f8')
         ra.dtype.names = ('f1', 'f2')
         repr(ra)  # should not cause a segmentation fault
         assert_raises(ValueError, setattr, ra.dtype, 'names', ('f1', 'f1'))
@@ -1724,17 +1725,17 @@ class TestRegression:
             def squeeze(self):
                 return super().squeeze()
 
-        oldsqueeze = OldSqueeze(np.array([[1],[2],[3]]))
+        oldsqueeze = OldSqueeze(np.array([[1], [2], [3]]))
 
         # if no axis argument is specified the old API
         # expectation should give the correct result
         assert_equal(np.squeeze(oldsqueeze),
-                     np.array([1,2,3]))
+                     np.array([1, 2, 3]))
 
         # likewise, axis=None should work perfectly well
         # with the old API expectation
         assert_equal(np.squeeze(oldsqueeze, axis=None),
-                     np.array([1,2,3]))
+                     np.array([1, 2, 3]))
 
         # however, specification of any particular axis
         # should raise a TypeError in the context of the
@@ -1760,7 +1761,7 @@ class TestRegression:
         # attempting to squeeze an axis that is not
         # of length 1
         with assert_raises(ValueError):
-            np.squeeze(np.array([[1],[2],[3]]), axis=0)
+            np.squeeze(np.array([[1], [2], [3]]), axis=0)
 
     def test_reduce_contiguous(self):
         # GitHub issue #387
@@ -1852,15 +1853,15 @@ class TestRegression:
     def test_ticket_1756(self):
         # Ticket #1756
         s = b'0123456789abcdef'
-        a = np.array([s]*5)
+        a = np.array([s] * 5)
         for i in range(1, 17):
             a1 = np.array(a, "|S%d" % i)
-            a2 = np.array([s[:i]]*5)
+            a2 = np.array([s[:i]] * 5)
             assert_equal(a1, a2)
 
     def test_fields_strides(self):
         "gh-2355"
-        r = np.frombuffer(b'abcdefghijklmnop'*4*3, dtype='i4,(2,3)u2')
+        r = np.frombuffer(b'abcdefghijklmnop' * 4 * 3, dtype='i4,(2,3)u2')
         assert_equal(r[0:3:2]['f1'], r['f1'][0:3:2])
         assert_equal(r[0:3:2]['f1'][0], r[0:3:2][0]['f1'])
         assert_equal(r[0:3:2]['f1'][0][()], r[0:3:2][0]['f1'][()])
@@ -1941,7 +1942,7 @@ class TestRegression:
              'invalid'),
 
             # different 8-bit code point in KOI8-R vs latin1
-            (np.bytes_(b'\x9c'),  
+            (np.bytes_(b'\x9c'),
              b"cnumpy.core.multiarray\nscalar\np0\n(cnumpy\ndtype\np1\n(S'S1'\np2\nI0\nI1\ntp3\nRp4\n(I3\nS'|'\np5\nNNNI1\nI1\nI0\ntp6\nbS'\\x9c'\np7\ntp8\nRp9\n.",  # noqa
              'different'),
         ]
@@ -2044,9 +2045,9 @@ class TestRegression:
     def test_unique_stable(self):
         # Ticket #2063 must always choose stable sort for argsort to
         # get consistent results
-        v = np.array(([0]*5 + [1]*6 + [2]*6)*4)
+        v = np.array(([0] * 5 + [1] * 6 + [2] * 6) * 4)
         res = np.unique(v, return_index=True)
-        tgt = (np.array([0, 1, 2]), np.array([ 0,  5, 11]))
+        tgt = (np.array([0, 1, 2]), np.array([0,  5, 11]))
         assert_equal(res, tgt)
 
     def test_unicode_alloc_dealloc_match(self):
@@ -2091,7 +2092,7 @@ class TestRegression:
         assert_array_equal(arr2, data_back)
 
     def test_structured_count_nonzero(self):
-        arr = np.array([0, 1]).astype('i4, (2)i4')[:1]
+        arr = np.array([0, 1]).astype('i4, 2i4')[:1]
         count = np.count_nonzero(arr)
         assert_equal(count, 0)
 
@@ -2177,7 +2178,7 @@ class TestRegression:
             __array_priority__ = 1002
 
             def __array__(self, *args, **kwargs):
-                raise Exception()
+                raise Exception
 
         rhs = Foo()
         lhs = np.array(1)
@@ -2264,7 +2265,7 @@ class TestRegression:
     def test_reshape_size_overflow(self):
         # gh-7455
         a = np.ones(20)[::2]
-        if np.dtype(np.intp).itemsize == 8:
+        if IS_64BIT:
             # 64 bit. The following are the prime factors of 2**63 + 5,
             # plus a leading 2, so when multiplied together as int64,
             # the result overflows to a total size of 10.
@@ -2311,10 +2312,13 @@ class TestRegression:
 
             try:
                 hash(val)
-            except TypeError as e:
-                assert_equal(t.__hash__, None)
+            except TypeError:
+                assert_(t.__hash__ is None)
+            except ValueError:
+                assert_(t is np.timedelta64)
+                assert_(t.__hash__ is not None)
             else:
-                assert_(t.__hash__ != None)
+                assert_(t.__hash__ is not None)
 
     def test_scalar_copy(self):
         scalar_types = set(np._core.sctypeDict.values())
@@ -2409,12 +2413,12 @@ class TestRegression:
         # gh-12711
         x = np.array([1, 2, 4, 7, 0], dtype=np.int16)
         res = np.ediff1d(x, to_begin=-99, to_end=np.array([88, 99]))
-        assert_equal(res, [-99,   1,   2,   3,  -7,  88,  99])
+        assert_equal(res, [-99, 1, 2, 3, -7, 88, 99])
 
         # The use of safe casting means, that 1<<20 is cast unsafely, an
         # error may be better, but currently there is no mechanism for it.
-        res = np.ediff1d(x, to_begin=(1<<20), to_end=(1<<20))
-        assert_equal(res, [0,   1,   2,   3,  -7,  0])
+        res = np.ediff1d(x, to_begin=(1 << 20), to_end=(1 << 20))
+        assert_equal(res, [0, 1, 2, 3, -7, 0])
 
     def test_pickle_datetime64_array(self):
         # gh-12745 (would fail with pickle5 installed)
@@ -2433,8 +2437,8 @@ class TestRegression:
 
     def test_2d__array__shape(self):
         class T:
-            def __array__(self):
-                return np.ndarray(shape=(0,0))
+            def __array__(self, dtype=None, copy=None):
+                return np.ndarray(shape=(0, 0))
 
             # Make sure __array__ is used instead of Sequence methods.
             def __iter__(self):
@@ -2445,7 +2449,6 @@ class TestRegression:
 
             def __len__(self):
                 return 0
-
 
         t = T()
         # gh-13659, would raise in broadcasting [x=t for x in result]
@@ -2467,9 +2470,9 @@ class TestRegression:
 
     def test__array_interface__descr(self):
         # gh-17068
-        dt = np.dtype(dict(names=['a', 'b'],
-                           offsets=[0, 0],
-                           formats=[np.int64, np.int64]))
+        dt = np.dtype({'names': ['a', 'b'],
+                           'offsets': [0, 0],
+                           'formats': [np.int64, np.int64]})
         descr = np.array((1, 1), dtype=dt).__array_interface__['descr']
         assert descr == [('', '|V8')]  # instead of [(b'', '|V8')]
 
@@ -2481,7 +2484,7 @@ class TestRegression:
         int32_max = np.iinfo(np.int32).max
         n = int32_max + 3
         a = np.empty([n], dtype=np.float32)
-        b = a[::n-1]
+        b = a[::n - 1]
         b[...] = 1
         assert b.strides[0] > int32_max * b.dtype.itemsize
         assert np.dot(b, b) == 2.0
@@ -2566,15 +2569,93 @@ class TestRegression:
         assert xp is np
         xp = arr.__array_namespace__(api_version="2022.12")
         assert xp is np
+        xp = arr.__array_namespace__(api_version="2023.12")
+        assert xp is np
+        xp = arr.__array_namespace__(api_version=None)
+        assert xp is np
 
         with pytest.raises(
             ValueError,
-            match="Version \"2023.12\" of the Array API Standard "
+            match="Version \"2024.12\" of the Array API Standard "
                   "is not supported."
         ):
-            arr.__array_namespace__(api_version="2023.12")
+            arr.__array_namespace__(api_version="2024.12")
+
+        with pytest.raises(
+            ValueError,
+            match="Only None and strings are allowed as the Array API version"
+        ):
+            arr.__array_namespace__(api_version=2023)
 
     def test_isin_refcnt_bug(self):
         # gh-25295
         for _ in range(1000):
             np.isclose(np.int64(2), np.int64(2), atol=1e-15, rtol=1e-300)
+
+    def test_replace_regression(self):
+        # gh-25513 segfault
+        carr = np.char.chararray((2,), itemsize=25)
+        test_strings = [b'  4.52173913043478315E+00',
+                        b'  4.95652173913043548E+00']
+        carr[:] = test_strings
+        out = carr.replace(b"E", b"D")
+        expected = np.char.chararray((2,), itemsize=25)
+        expected[:] = [s.replace(b"E", b"D") for s in test_strings]
+        assert_array_equal(out, expected)
+
+    def test_logspace_base_does_not_determine_dtype(self):
+        # gh-24957 and cupy/cupy/issues/7946
+        start = np.array([0, 2], dtype=np.float16)
+        stop = np.array([2, 0], dtype=np.float16)
+        out = np.logspace(start, stop, num=5, axis=1, dtype=np.float32)
+        expected = np.array([[1., 3.1621094, 10., 31.625, 100.],
+                             [100., 31.625, 10., 3.1621094, 1.]],
+                            dtype=np.float32)
+        assert_almost_equal(out, expected)
+        # Check test fails if the calculation is done in float64, as happened
+        # before when a python float base incorrectly influenced the dtype.
+        out2 = np.logspace(start, stop, num=5, axis=1, dtype=np.float32,
+                           base=np.array([10.0]))
+        with pytest.raises(AssertionError, match="not almost equal"):
+            assert_almost_equal(out2, expected)
+
+    def test_vectorize_fixed_width_string(self):
+        arr = np.array(["SOme wOrd Ǆ ß ᾛ ΣΣ ﬃ⁵Å Ç Ⅰ"]).astype(np.str_)
+        f = str.casefold
+        res = np.vectorize(f, otypes=[arr.dtype])(arr)
+        assert res.dtype == "U30"
+
+    def test_repeated_square_consistency(self):
+        # gh-26940
+        buf = np.array([-5.171866611150749e-07 + 2.5618634555957426e-07j,
+                        0, 0, 0, 0, 0])
+        # Test buffer with regular and reverse strides
+        for in_vec in [buf[:3], buf[:3][::-1]]:
+            expected_res = np.square(in_vec)
+            # Output vector immediately follows input vector
+            # to reproduce off-by-one in nomemoverlap check.
+            for res in [buf[3:], buf[3:][::-1]]:
+                res = buf[3:]
+                np.square(in_vec, out=res)
+                assert_equal(res, expected_res)
+
+    def test_sort_unique_crash(self):
+        # gh-27037
+        for _ in range(4):
+            vals = np.linspace(0, 1, num=128)
+            data = np.broadcast_to(vals, (128, 128, 128))
+            data = data.transpose(0, 2, 1).copy()
+            np.unique(data)
+
+    def test_sort_overlap(self):
+        # gh-27273
+        size = 100
+        inp = np.linspace(0, size, num=size, dtype=np.intc)
+        out = np.sort(inp)
+        assert_equal(inp, out)
+
+    def test_searchsorted_structured(self):
+        # gh-28190
+        x = np.array([(0, 1.)], dtype=[('time', '<i8'), ('value', '<f8')])
+        y = np.array((0, 0.), dtype=[('time', '<i8'), ('value', '<f8')])
+        x.searchsorted(y)

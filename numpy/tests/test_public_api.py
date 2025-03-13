@@ -1,3 +1,4 @@
+import functools
 import sys
 import sysconfig
 import subprocess
@@ -38,7 +39,6 @@ def test_numpy_namespace():
     # We override dir to not show these members
     allowlist = {
         'recarray': 'numpy.rec.recarray',
-        'show_config': 'numpy.__config__.show',
     }
     bad_results = check_dir(np)
     # pytest gives better error messages with the builtin assert than with
@@ -108,22 +108,20 @@ def test_NPY_NO_EXPORT():
 # current status is fine.  For others it may make sense to work on making them
 # private, to clean up our public API and avoid confusion.
 PUBLIC_MODULES = ['numpy.' + s for s in [
-    "array_api",
-    "array_api.linalg",
     "ctypeslib",
     "dtypes",
     "exceptions",
     "f2py",
     "fft",
     "lib",
-    "lib.format",  # was this meant to be public?
+    "lib.array_utils",
+    "lib.format",
+    "lib.introspect",
     "lib.mixins",
-    "lib.recfunctions",
+    "lib.npyio",
+    "lib.recfunctions",  # note: still needs cleaning, was forgotten for 2.0
     "lib.scimath",
     "lib.stride_tricks",
-    "lib.npyio",
-    "lib.introspect",
-    "lib.array_utils",
     "linalg",
     "ma",
     "ma.extras",
@@ -136,11 +134,12 @@ PUBLIC_MODULES = ['numpy.' + s for s in [
     "polynomial.legendre",
     "polynomial.polynomial",
     "random",
+    "strings",
     "testing",
     "testing.overrides",
     "typing",
     "typing.mypy_plugin",
-    "version"  # Should be removed for NumPy 2.0
+    "version",
 ]]
 if sys.version_info < (3, 12):
     PUBLIC_MODULES += [
@@ -153,7 +152,6 @@ if sys.version_info < (3, 12):
             "distutils.system_info",
         ]
     ]
-
 
 
 PUBLIC_ALIASED_MODULES = [
@@ -273,25 +271,18 @@ if sys.version_info < (3, 12):
 
 def is_unexpected(name):
     """Check if this needs to be considered."""
-    if '._' in name or '.tests' in name or '.setup' in name:
-        return False
-
-    if name in PUBLIC_MODULES:
-        return False
-
-    if name in PUBLIC_ALIASED_MODULES:
-        return False
-
-    if name in PRIVATE_BUT_PRESENT_MODULES:
-        return False
-
-    return True
+    return (
+        '._' not in name and '.tests' not in name and '.setup' not in name
+		and name not in PUBLIC_MODULES
+		and name not in PUBLIC_ALIASED_MODULES
+		and name not in PRIVATE_BUT_PRESENT_MODULES
+	)
 
 
-if sys.version_info < (3, 12):
-    SKIP_LIST = ["numpy.distutils.msvc9compiler"]
-else:
+if sys.version_info >= (3, 12):
     SKIP_LIST = []
+else:
+    SKIP_LIST = ["numpy.distutils.msvc9compiler"]
 
 
 # suppressing warnings from deprecated modules
@@ -450,7 +441,7 @@ def test_api_importable():
 def test_array_api_entry_point():
     """
     Entry point for Array API implementation can be found with importlib and
-    returns the numpy.array_api namespace.
+    returns the main numpy namespace.
     """
     # For a development install that did not go through meson-python,
     # the entrypoint will not have been installed. So ensure this test fails
@@ -480,12 +471,20 @@ def test_array_api_entry_point():
             raise AssertionError(msg) from None
         return
 
+    if ep.value == 'numpy.array_api':
+        # Looks like the entrypoint for the current numpy build isn't
+        # installed, but an older numpy is also installed and hence the
+        # entrypoint is pointing to the old (no longer existing) location.
+        # This isn't a problem except for when running tests with `spin` or an
+        # in-place build.
+        return
+
     xp = ep.load()
     msg = (
         f"numpy entry point value '{ep.value}' "
         "does not point to our Array API implementation"
     )
-    assert xp is numpy.array_api, msg
+    assert xp is numpy, msg
 
 
 def test_main_namespace_all_dir_coherence():
@@ -524,16 +523,26 @@ def test_core_shims_coherence():
     import numpy.core as core
 
     for member_name in dir(np._core):
-        # skip private and test members
-        if member_name.startswith("_") or member_name == "tests":
+        # Skip private and test members. Also if a module is aliased,
+        # no need to add it to np.core
+        if (
+            member_name.startswith("_")
+            or member_name in ["tests", "strings"]
+            or f"numpy.{member_name}" in PUBLIC_ALIASED_MODULES
+        ):
             continue
 
         member = getattr(np._core, member_name)
 
         # np.core is a shim and all submodules of np.core are shims
         # but we should be able to import everything in those shims
-        # that are available in the "real" modules in np._core
-        if inspect.ismodule(member):
+        # that are available in the "real" modules in np._core, with
+        # the exception of the namespace packages (__spec__.origin is None),
+        # like numpy._core.include, or numpy._core.lib.pkgconfig.
+        if (
+            inspect.ismodule(member)
+            and member.__spec__ and member.__spec__.origin is not None
+        ):
             submodule = member
             submodule_name = member_name
             for submodule_member_name in dir(submodule):
@@ -571,7 +580,7 @@ def test_functions_single_location():
     visited_functions: Set[Callable[..., Any]] = set()
     # Functions often have `__name__` overridden, therefore we need
     # to keep track of locations where functions have been found.
-    functions_original_paths: Dict[Callable[..., Any], str] = dict()
+    functions_original_paths: Dict[Callable[..., Any], str] = {}
 
     # Here we aggregate functions with more than one location.
     # It must be empty for the test to pass.
@@ -602,8 +611,7 @@ def test_functions_single_location():
             # else check if we got a function-like object
             elif (
                 inspect.isfunction(member) or
-                isinstance(member, dispatched_function) or
-                isinstance(member, np.ufunc)
+                isinstance(member, (dispatched_function, np.ufunc))
             ):
                 if member in visited_functions:
 
@@ -639,6 +647,23 @@ def test_functions_single_location():
                     ):
                         continue
 
+                    # skip ufuncs that are exported in np.strings as well
+                    if member.__name__ in (
+                        "add",
+                        "equal",
+                        "not_equal",
+                        "greater",
+                        "greater_equal",
+                        "less",
+                        "less_equal",
+                    ) and module.__name__ == "numpy.strings":
+                        continue
+
+                    # numpy.char reexports all numpy.strings functions for
+                    # backwards-compatibility
+                    if module.__name__ == "numpy.char":
+                        continue
+
                     # function is present in more than one location!
                     duplicated_functions.append(
                         (member.__name__,
@@ -652,3 +677,141 @@ def test_functions_single_location():
     del visited_functions, visited_modules, functions_original_paths
 
     assert len(duplicated_functions) == 0, duplicated_functions
+
+
+def test___module___attribute():
+    modules_queue = [np]
+    visited_modules = {np}
+    visited_functions = set()
+    incorrect_entries = []
+
+    while len(modules_queue) > 0:
+        module = modules_queue.pop()
+        for member_name in dir(module):
+            member = getattr(module, member_name)
+            # first check if we got a module
+            if (
+                inspect.ismodule(member) and  # it's a module
+                "numpy" in member.__name__ and  # inside NumPy
+                not member_name.startswith("_") and  # not private
+                "numpy._core" not in member.__name__ and  # outside _core
+                # not in a skip module list
+                member_name not in [
+                    "char", "core", "f2py", "ma", "lapack_lite", "mrecords",
+                    "testing", "tests", "polynomial", "typing", "mtrand",
+                    "bit_generator",
+                ] and
+                member not in visited_modules  # not visited yet
+            ):
+                modules_queue.append(member)
+                visited_modules.add(member)
+            elif (
+                not inspect.ismodule(member) and
+                hasattr(member, "__name__") and
+                not member.__name__.startswith("_") and
+                member.__module__ != module.__name__ and
+                member not in visited_functions
+            ):
+                # skip ufuncs that are exported in np.strings as well
+                if member.__name__ in (
+                    "add", "equal", "not_equal", "greater", "greater_equal",
+                    "less", "less_equal",
+                ) and module.__name__ == "numpy.strings":
+                    continue
+
+                # recarray and record are exported in np and np.rec
+                if (
+                    (member.__name__ == "recarray" and module.__name__ == "numpy") or
+                    (member.__name__ == "record" and module.__name__ == "numpy.rec")
+                ):
+                    continue
+
+                # ctypeslib exports ctypes c_long/c_longlong
+                if (
+                    member.__name__ in ("c_long", "c_longlong") and
+                    module.__name__ == "numpy.ctypeslib"
+                ):
+                    continue
+
+                # skip cdef classes
+                if member.__name__ in (
+                    "BitGenerator", "Generator", "MT19937", "PCG64", "PCG64DXSM",
+                    "Philox", "RandomState", "SFC64", "SeedSequence",
+                ):
+                    continue
+
+                incorrect_entries.append(
+                    {
+                        "Func": member.__name__,
+                        "actual": member.__module__,
+                        "expected": module.__name__,
+                    }
+                )
+                visited_functions.add(member)
+
+    if incorrect_entries:
+        assert len(incorrect_entries) == 0, incorrect_entries
+
+
+def _check_correct_qualname_and_module(obj) -> bool:
+    qualname = obj.__qualname__
+    name = obj.__name__
+    module_name = obj.__module__
+    assert name == qualname.split(".")[-1]
+
+    module = sys.modules[module_name]
+    actual_obj = functools.reduce(getattr, qualname.split("."), module)
+    return (
+        actual_obj is obj or
+        # `obj` may be a bound method/property of `actual_obj`:
+        (
+            hasattr(actual_obj, "__get__") and hasattr(obj, "__self__") and
+            actual_obj.__module__ == obj.__module__ and
+            actual_obj.__qualname__ == qualname
+        )
+    )
+
+
+def test___qualname___and___module___attribute():
+    # NumPy messes with module and name/qualname attributes, but any object
+    # should be discoverable based on its module and qualname, so test that.
+    # We do this for anything with a name (ensuring qualname is also set).
+    modules_queue = [np]
+    visited_modules = {np}
+    visited_functions = set()
+    incorrect_entries = []
+
+    while len(modules_queue) > 0:
+        module = modules_queue.pop()
+        for member_name in dir(module):
+            member = getattr(module, member_name)
+            # first check if we got a module
+            if (
+                inspect.ismodule(member) and  # it's a module
+                "numpy" in member.__name__ and  # inside NumPy
+                not member_name.startswith("_") and  # not private
+                member_name != "tests" and
+                member_name != "typing" and  # 2024-12: type names don't match
+                "numpy._core" not in member.__name__ and  # outside _core
+                member not in visited_modules  # not visited yet
+            ):
+                modules_queue.append(member)
+                visited_modules.add(member)
+            elif (
+                not inspect.ismodule(member) and
+                hasattr(member, "__name__") and
+                not member.__name__.startswith("_") and
+                not member_name.startswith("_") and
+                not _check_correct_qualname_and_module(member) and
+                member not in visited_functions
+            ):
+                incorrect_entries.append(
+                    {
+                        "found_at": f"{module.__name__}:{member_name}",
+                        "advertises": f"{member.__module__}:{member.__qualname__}",
+                    }
+                )
+                visited_functions.add(member)
+
+    if incorrect_entries:
+        assert len(incorrect_entries) == 0, incorrect_entries

@@ -11,6 +11,9 @@ Constants
 ---------
 
 ``UFUNC_{THING}_{ERR}``
+
+    Deprecated, use ``NPY_{THING}_{ERR}`` instead
+
     .. c:macro:: UFUNC_FPE_DIVIDEBYZERO
 
     .. c:macro:: UFUNC_FPE_OVERFLOW
@@ -431,7 +434,18 @@ Importing the API
 
 .. c:macro:: NO_IMPORT_UFUNC
 
-.. c:function:: void import_ufunc(void)
+.. c:function:: int PyUFunc_ImportUFuncAPI(void)
+
+    Ensures that the UFunc C-API is imported and usable.  It returns ``0``
+    on success and ``-1`` with an error set if NumPy couldn't be imported.
+    While preferable to call it once at module initialization, this function
+    is very light-weight if called multiple times.
+
+    .. versionadded:: 2.0
+        This function mainly checks for ``PyUFunc_API == NULL`` so it can be
+        manually backported if desired.
+
+.. c:macro:: import_ufunc(void)
 
     These are the constants and functions for accessing the ufunc
     C-API from extension modules in precisely the same way as the

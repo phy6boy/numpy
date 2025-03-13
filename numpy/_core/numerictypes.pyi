@@ -1,33 +1,48 @@
-import sys
-import types
+import builtins
 from typing import (
-    Literal as L,
-    overload,
     Any,
-    TypeVar,
-    Protocol,
+    Literal as L,
     TypedDict,
+    type_check_only,
 )
 
 import numpy as np
 from numpy import (
-    ndarray,
     dtype,
     generic,
+    bool,
+    bool_,
+    uint8,
+    uint16,
+    uint32,
+    uint64,
     ubyte,
     ushort,
     uintc,
     ulong,
     ulonglong,
+    uintp,
+    uint,
+    int8,
+    int16,
+    int32,
+    int64,
     byte,
     short,
     intc,
     long,
     longlong,
+    intp,
+    int_,
+    float16,
+    float32,
+    float64,
     half,
     single,
     double,
     longdouble,
+    complex64,
+    complex128,
     csingle,
     cdouble,
     clongdouble,
@@ -37,88 +52,141 @@ from numpy import (
     str_,
     bytes_,
     void,
+    unsignedinteger,
+    character,
+    inexact,
+    number,
+    integer,
+    flexible,
+    complexfloating,
+    signedinteger,
+    floating,
+)
+from ._type_aliases import sctypeDict  # noqa: F401
+from .multiarray import (
+    busday_count,
+    busday_offset,
+    busdaycalendar,
+    datetime_as_string,
+    datetime_data,
+    is_busday,
 )
 
-from numpy._core._type_aliases import (
-    sctypeDict as sctypeDict,
-    sctypes as sctypes,
+from numpy._typing import DTypeLike
+from numpy._typing._extended_precision import (
+    uint128,
+    uint256,
+    int128,
+    int256,
+    float80,
+    float96,
+    float128,
+    float256,
+    complex160,
+    complex192,
+    complex256,
+    complex512,
 )
 
-from numpy._typing import DTypeLike, ArrayLike, _DTypeLike
+__all__ = [
+    "ScalarType",
+    "typecodes",
+    "issubdtype",
+    "datetime_data",
+    "datetime_as_string",
+    "busday_offset",
+    "busday_count",
+    "is_busday",
+    "busdaycalendar",
+    "isdtype",
+    "generic",
+    "unsignedinteger",
+    "character",
+    "inexact",
+    "number",
+    "integer",
+    "flexible",
+    "complexfloating",
+    "signedinteger",
+    "floating",
+    "bool",
+    "float16",
+    "float32",
+    "float64",
+    "longdouble",
+    "complex64",
+    "complex128",
+    "clongdouble",
+    "bytes_",
+    "str_",
+    "void",
+    "object_",
+    "datetime64",
+    "timedelta64",
+    "int8",
+    "byte",
+    "uint8",
+    "ubyte",
+    "int16",
+    "short",
+    "uint16",
+    "ushort",
+    "int32",
+    "intc",
+    "uint32",
+    "uintc",
+    "int64",
+    "long",
+    "uint64",
+    "ulong",
+    "longlong",
+    "ulonglong",
+    "intp",
+    "uintp",
+    "double",
+    "cdouble",
+    "single",
+    "csingle",
+    "half",
+    "bool_",
+    "int_",
+    "uint",
+    "uint128",
+    "uint256",
+    "int128",
+    "int256",
+    "float80",
+    "float96",
+    "float128",
+    "float256",
+    "complex160",
+    "complex192",
+    "complex256",
+    "complex512",
+]
 
-_T = TypeVar("_T")
-_SCT = TypeVar("_SCT", bound=generic)
-
-class _CastFunc(Protocol):
-    def __call__(
-        self, x: ArrayLike, k: DTypeLike = ...
-    ) -> ndarray[Any, dtype[Any]]: ...
-
+@type_check_only
 class _TypeCodes(TypedDict):
     Character: L['c']
-    Integer: L['bhilqp']
-    UnsignedInteger: L['BHILQP']
+    Integer: L['bhilqnp']
+    UnsignedInteger: L['BHILQNP']
     Float: L['efdg']
     Complex: L['FDG']
-    AllInteger: L['bBhHiIlLqQpP']
+    AllInteger: L['bBhHiIlLqQnNpP']
     AllFloat: L['efdgFDG']
     Datetime: L['Mm']
-    All: L['?bhilqpBHILQPefdgFDGSUVOMm']
+    All: L['?bhilqnpBHILQNPefdgFDGSUVOMm']
 
-if sys.version_info >= (3, 10):
-    _TypeTuple = (
-        type[Any]
-        | types.UnionType
-        | tuple[type[Any] | types.UnionType | tuple[Any, ...], ...]
-    )
-else:
-    _TypeTuple = (
-        type[Any]
-        | tuple[type[Any] | tuple[Any, ...], ...]
-    )
+def isdtype(dtype: dtype[Any] | type[Any], kind: DTypeLike | tuple[DTypeLike, ...]) -> builtins.bool: ...
 
-__all__: list[str]
-
-@overload
-def maximum_sctype(t: _DTypeLike[_SCT]) -> type[_SCT]: ...
-@overload
-def maximum_sctype(t: DTypeLike) -> type[Any]: ...
-
-@overload
-def issctype(rep: dtype[Any] | type[Any]) -> bool: ...
-@overload
-def issctype(rep: object) -> L[False]: ...
-
-@overload
-def obj2sctype(rep: _DTypeLike[_SCT], default: None = ...) -> None | type[_SCT]: ...
-@overload
-def obj2sctype(rep: _DTypeLike[_SCT], default: _T) -> _T | type[_SCT]: ...
-@overload
-def obj2sctype(rep: DTypeLike, default: None = ...) -> None | type[Any]: ...
-@overload
-def obj2sctype(rep: DTypeLike, default: _T) -> _T | type[Any]: ...
-@overload
-def obj2sctype(rep: object, default: None = ...) -> None: ...
-@overload
-def obj2sctype(rep: object, default: _T) -> _T: ...
-
-@overload
-def issubclass_(arg1: type[Any], arg2: _TypeTuple) -> bool: ...
-@overload
-def issubclass_(arg1: object, arg2: object) -> L[False]: ...
-
-def issubsctype(arg1: DTypeLike, arg2: DTypeLike) -> bool: ...
-
-def issubdtype(arg1: DTypeLike, arg2: DTypeLike) -> bool: ...
-
-def sctype2char(sctype: DTypeLike) -> str: ...
+def issubdtype(arg1: DTypeLike, arg2: DTypeLike) -> builtins.bool: ...
 
 typecodes: _TypeCodes
 ScalarType: tuple[
     type[int],
     type[float],
     type[complex],
-    type[bool],
+    type[builtins.bool],
     type[bytes],
     type[str],
     type[memoryview],

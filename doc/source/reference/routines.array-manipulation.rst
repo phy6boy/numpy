@@ -9,13 +9,14 @@ Basic operations
    :toctree: generated/
 
     copyto
+    ndim
     shape
+    size
 
 Changing array shape
 ====================
 .. autosummary::
    :toctree: generated/
-
 
    reshape
    ravel
@@ -86,6 +87,7 @@ Splitting arrays
    dsplit
    hsplit
    vsplit
+   unstack
 
 Tiling arrays
 =============
@@ -106,6 +108,7 @@ Adding and removing elements
    resize
    trim_zeros
    unique
+   pad
 
 Rearranging elements
 ====================
@@ -115,6 +118,5 @@ Rearranging elements
    flip
    fliplr
    flipud
-   reshape
    roll
    rot90

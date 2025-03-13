@@ -7,10 +7,11 @@
 #include "numpy/npy_common.h"
 #include "numpy/arrayobject.h"
 
-#include "common_dtype.h"
+#include "alloc.h"
 #include "convert_datatype.h"
 #include "dtypemeta.h"
 #include "abstractdtypes.h"
+#include "npy_static_data.h"
 
 
 /*
@@ -28,12 +29,14 @@
  */
 
 
-/**
+/*NUMPY_API
  * This function defines the common DType operator.
  *
  * Note that the common DType will not be "object" (unless one of the dtypes
  * is object), even though object can technically represent all values
- * correctly.
+ * correctly. Similar to `np.result_type`, but works on the classes and not
+ * instances.
+ *
  *
  * TODO: Before exposure, we should review the return value (e.g. no error
  *       when no common DType is found).
@@ -62,7 +65,7 @@ PyArray_CommonDType(PyArray_DTypeMeta *dtype1, PyArray_DTypeMeta *dtype2)
     }
     if (common_dtype == (PyArray_DTypeMeta *)Py_NotImplemented) {
         Py_DECREF(Py_NotImplemented);
-        PyErr_Format(npy_DTypePromotionError,
+        PyErr_Format(npy_static_pydata.DTypePromotionError,
                 "The DTypes %S and %S do not have a common DType. "
                 "For example they cannot be stored in a single array unless "
                 "the dtype is `object`.", dtype1, dtype2);
@@ -104,7 +107,7 @@ PyArray_CommonDType(PyArray_DTypeMeta *dtype1, PyArray_DTypeMeta *dtype2)
  * default_builtin_common_dtype
  *
  * @param length Number of DTypes
- * @param dtypes
+ * @param dtypes List of DTypes to be reduced
  */
 static PyArray_DTypeMeta *
 reduce_dtypes_to_most_knowledgeable(
@@ -130,7 +133,7 @@ reduce_dtypes_to_most_knowledgeable(
         }
 
         if (res == (PyArray_DTypeMeta *)Py_NotImplemented) {
-            /* guess at other being more "knowledgable" */
+            /* guess at other being more "knowledgeable" */
             PyArray_DTypeMeta *tmp = dtypes[low];
             dtypes[low] = dtypes[high];
             dtypes[high] = tmp;
@@ -149,9 +152,19 @@ reduce_dtypes_to_most_knowledgeable(
 }
 
 
-/**
+/*NUMPY_API
  * Promotes a list of DTypes with each other in a way that should guarantee
- * stable results even when changing the order.
+ * stable results even when changing the order.  This function is smarter and
+ * can often return successful and unambiguous results when
+ * `common_dtype(common_dtype(dt1, dt2), dt3)` would depend on the operation
+ * order or fail.  Nevertheless, DTypes should aim to ensure that their
+ * common-dtype implementation is associative and commutative!  (Mainly,
+ * unsigned and signed integers are not.)
+ *
+ * For guaranteed consistent results DTypes must implement common-Dtype
+ * "transitively".  If A promotes B and B promotes C, than A must generally
+ * also promote C; where "promotes" means implements the promotion.  (There
+ * are some exceptions for abstract DTypes)
  *
  * In general this approach always works as long as the most generic dtype
  * is either strictly larger, or compatible with all other dtypes.
@@ -199,19 +212,10 @@ PyArray_PromoteDTypeSequence(
     PyArray_DTypeMeta *result = NULL;
 
     /* Copy dtypes so that we can reorder them (only allocate when many) */
-    PyObject *_scratch_stack[NPY_MAXARGS];
-    PyObject **_scratch_heap = NULL;
-    PyArray_DTypeMeta **dtypes = (PyArray_DTypeMeta **)_scratch_stack;
-
-    if (length > NPY_MAXARGS) {
-        _scratch_heap = PyMem_Malloc(length * sizeof(PyObject *));
-        if (_scratch_heap == NULL) {
-            PyErr_NoMemory();
-            return NULL;
-        }
-        dtypes = (PyArray_DTypeMeta **)_scratch_heap;
+    NPY_ALLOC_WORKSPACE(dtypes, PyArray_DTypeMeta *, 16, length);
+    if (dtypes == NULL) {
+        return NULL;
     }
-
     memcpy(dtypes, dtypes_in, length * sizeof(PyObject *));
 
     /*
@@ -273,7 +277,7 @@ PyArray_PromoteDTypeSequence(
                 Py_INCREF(dtypes_in[l]);
                 PyTuple_SET_ITEM(dtypes_in_tuple, l, (PyObject *)dtypes_in[l]);
             }
-            PyErr_Format(npy_DTypePromotionError,
+            PyErr_Format(npy_static_pydata.DTypePromotionError,
                     "The DType %S could not be promoted by %S. This means that "
                     "no common DType exists for the given inputs. "
                     "For example they cannot be stored in a single array unless "
@@ -299,6 +303,6 @@ PyArray_PromoteDTypeSequence(
     }
 
   finish:
-    PyMem_Free(_scratch_heap);
+    npy_free_workspace(dtypes);
     return result;
 }

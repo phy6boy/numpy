@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Fortran to Python Interface Generator.
 
 Copyright 1999 -- 2011 Pearu Peterson all rights reserved.
@@ -53,13 +52,13 @@ def get_include():
     process. For a module ``mymod``:
 
     * Step 1: run ``python -m numpy.f2py mymod.pyf --quiet``. This
-      generates ``_mymodmodule.c`` and (if needed)
-      ``_fblas-f2pywrappers.f`` files next to ``mymod.pyf``.
+      generates ``mymodmodule.c`` and (if needed)
+      ``mymod-f2pywrappers.f`` files next to ``mymod.pyf``.
     * Step 2: build your Python extension module. This requires the
       following source files:
 
-      * ``_mymodmodule.c``
-      * ``_mymod-f2pywrappers.f`` (if it was generated in Step 1)
+      * ``mymodmodule.c``
+      * ``mymod-f2pywrappers.f`` (if it was generated in Step 1)
       * ``fortranobject.c``
 
     See Also
